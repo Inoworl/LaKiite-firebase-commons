@@ -89,8 +89,6 @@ service cloud.firestore {
     function isValidDisplayListColorKey(colorKey) {
       return [
         'red',
-        'orange',
-        'amber',
         'green',
         'teal',
         'cyan',
