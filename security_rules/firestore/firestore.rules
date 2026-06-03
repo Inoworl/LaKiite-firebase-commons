@@ -117,6 +117,45 @@ service cloud.firestore {
         && data.updatedAt != null;
     }
 
+    function hasRequiredAppVersionFields(data) {
+      return data.keys().hasAll([
+          'forceUpdate',
+          'iOSLatestVersion',
+          'androidLatestVersion',
+          'iOSMinRequiredVersion',
+          'androidMinRequiredVersion',
+          'appStoreUrl',
+          'googlePlayUrl',
+          'title',
+          'content'
+        ])
+        && data.forceUpdate is bool
+        && data.iOSLatestVersion is string
+        && data.androidLatestVersion is string
+        && data.iOSMinRequiredVersion is string
+        && data.androidMinRequiredVersion is string
+        && data.appStoreUrl is string
+        && data.googlePlayUrl is string
+        && data.title is string
+        && data.content is string;
+    }
+
+    // settingsコレクションのルール
+    match /settings/{settingId} {
+      // 強制アップデート判定はログイン前にも必要なため公開読み取りを許可する。
+      allow read: if settingId == 'appVersion';
+
+      // 更新設定は管理者のみ書き込み可能。
+      allow create, update: if request.auth != null
+        && isAdmin()
+        && settingId == 'appVersion'
+        && hasRequiredAppVersionFields(request.resource.data);
+
+      allow delete: if request.auth != null
+        && isAdmin()
+        && settingId == 'appVersion';
+    }
+
     // usersコレクションのルール
     match /users/{userId} {
       // 公開情報の読み取りと検索クエリを許可

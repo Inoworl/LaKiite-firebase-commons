@@ -19,6 +19,8 @@
     "deploy:rules:prod": "npm --prefix functions run deploy:rules:prod",
     "deploy:indexes:dev": "npm --prefix functions run deploy:indexes:dev",
     "deploy:indexes:prod": "npm --prefix functions run deploy:indexes:prod",
+    "set:app-version:dev": "node scripts/set-app-version.js dev",
+    "set:app-version:prod": "node scripts/set-app-version.js prod",
     "logs:functions:dev": "npm --prefix functions run logs:dev",
     "logs:functions:prod": "npm --prefix functions run logs:prod"
   },
