@@ -76,6 +76,46 @@ describe('Settings Collection Security Rules', () => {
       );
     });
   });
+
+  describe('scheduleDigestSettings', () => {
+    test('ユーザーは自分の朝通知設定を読み取れる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' }, {
+        'scheduleDigestSettings/user1': scheduleDigestSettings()
+      });
+      const db = context.firestore();
+
+      await expectSuccess(db.doc('scheduleDigestSettings/user1').get());
+    });
+
+    test('ユーザーは他人の朝通知設定を読み取れない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user2' }, {
+        'scheduleDigestSettings/user1': scheduleDigestSettings()
+      });
+      const db = context.firestore();
+
+      await expectFailure(db.doc('scheduleDigestSettings/user1').get());
+    });
+
+    test('ユーザーは自分の朝通知設定を作成できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectSuccess(
+        db.doc('scheduleDigestSettings/user1').set(scheduleDigestSettings())
+      );
+    });
+
+    test('10時以降の朝通知設定は作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+      const data = scheduleDigestSettings();
+      data.notifyHour = 10;
+
+      await expectFailure(
+        db.doc('scheduleDigestSettings/user1').set(data)
+      );
+    });
+  });
 });
 
 function appVersionSettings() {
@@ -89,5 +129,14 @@ function appVersionSettings() {
     googlePlayUrl: '',
     title: 'アプリの更新',
     content: '最新バージョンへ更新してください。'
+  };
+}
+
+function scheduleDigestSettings() {
+  return {
+    enabled: true,
+    notifyHour: 8,
+    lastSentDate: null,
+    updatedAt: new Date()
   };
 }

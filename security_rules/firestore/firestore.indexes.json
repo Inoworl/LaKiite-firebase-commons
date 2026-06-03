@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "scheduleDigestSettings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "enabled",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "notifyHour",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "lists",
       "queryScope": "COLLECTION",
       "fields": [

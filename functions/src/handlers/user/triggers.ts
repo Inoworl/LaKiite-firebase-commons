@@ -3,6 +3,22 @@ import * as admin from "firebase-admin";
 import { cleanupRetiredUserReferences } from "./deletion-cleanup";
 import { processUserUpdates } from "./batch-sync";
 import { buildUserProfileUpdates } from "./profile-sync";
+import { onScheduleDigestUserCreated } from "../schedule-digest/triggers";
+
+export const onUserCreated = functions.onDocumentCreated(
+  {
+    document: "users/{userId}",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    try {
+      await onScheduleDigestUserCreated(event.params.userId);
+      console.log(`朝通知設定の初期作成完了: ${event.params.userId}`);
+    } catch (error) {
+      console.error("朝通知設定の初期作成エラー:", error);
+    }
+  }
+);
 
 /**
  * ユーザー情報更新時に履歴を記録

@@ -140,6 +140,25 @@ service cloud.firestore {
         && data.content is string;
     }
 
+    function hasValidScheduleDigestSettingsFields(data) {
+      return data.keys().hasOnly([
+          'enabled',
+          'notifyHour',
+          'lastSentDate',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.enabled is bool
+        && data.notifyHour is number
+        && data.notifyHour >= 0
+        && data.notifyHour <= 9
+        && (!data.keys().hasAny(['lastSentDate'])
+          || data.lastSentDate == null
+          || data.lastSentDate is string)
+        && (!data.keys().hasAny(['createdAt']) || data.createdAt != null)
+        && data.updatedAt != null;
+    }
+
     // settingsコレクションのルール
     match /settings/{settingId} {
       // 強制アップデート判定はログイン前にも必要なため公開読み取りを許可する。
@@ -154,6 +173,18 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && isAdmin()
         && settingId == 'appVersion';
+    }
+
+    match /scheduleDigestSettings/{userId} {
+      allow read: if request.auth != null
+        && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null
+        && request.auth.uid == userId
+        && hasValidScheduleDigestSettingsFields(request.resource.data);
+
+      allow delete: if request.auth != null
+        && request.auth.uid == userId;
     }
 
     // usersコレクションのルール
