@@ -185,4 +185,67 @@ describe('Users Collection Security Rules', () => {
       await expectFailure(db.doc('users/user1/private/profile').get());
     });
   });
+
+  describe('表示用リストサブコレクション', () => {
+    const displayListData = {
+      name: '家族',
+      ownerId: 'user1',
+      colorKey: 'teal',
+      memberIds: ['user2'],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    test('ユーザーは自分の表示用リストを読み取れる', async () => {
+      const mockData = {
+        'users/user1/displayLists/list1': displayListData
+      };
+
+      const context = await setupTestEnvironment({ uid: 'user1' }, mockData);
+      const db = context.firestore();
+
+      await expectSuccess(db.doc('users/user1/displayLists/list1').get());
+    });
+
+    test('ユーザーは他人の表示用リストを読み取れない', async () => {
+      const mockData = {
+        'users/user1/displayLists/list1': displayListData
+      };
+
+      const context = await setupTestEnvironment({ uid: 'user2' }, mockData);
+      const db = context.firestore();
+
+      await expectFailure(db.doc('users/user1/displayLists/list1').get());
+    });
+
+    test('ユーザーは自分の表示用リストを作成できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectSuccess(
+        db.doc('users/user1/displayLists/list1').set(displayListData)
+      );
+    });
+
+    test('ユーザーは他人の表示用リストを作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user2' });
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user1/displayLists/list1').set(displayListData)
+      );
+    });
+
+    test('無効なカラーキーの表示用リストは作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user1/displayLists/list1').set({
+          ...displayListData,
+          colorKey: 'unknown'
+        })
+      );
+    });
+  });
 });

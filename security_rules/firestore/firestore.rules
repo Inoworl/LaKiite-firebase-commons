@@ -86,6 +86,76 @@ service cloud.firestore {
         || data[field] is string;
     }
 
+    function isValidDisplayListColorKey(colorKey) {
+      return [
+        'red',
+        'green',
+        'teal',
+        'cyan',
+        'blue',
+        'indigo',
+        'purple',
+        'pink'
+      ].hasAny([colorKey]);
+    }
+
+    function hasRequiredDisplayListFields(data) {
+      return data.keys().hasOnly([
+          'name',
+          'ownerId',
+          'colorKey',
+          'memberIds',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.name is string
+        && data.ownerId is string
+        && data.colorKey is string
+        && isValidDisplayListColorKey(data.colorKey)
+        && data.memberIds is list
+        && data.createdAt != null
+        && data.updatedAt != null;
+    }
+
+    function hasRequiredAppVersionFields(data) {
+      return data.keys().hasAll([
+          'forceUpdate',
+          'iOSLatestVersion',
+          'androidLatestVersion',
+          'iOSMinRequiredVersion',
+          'androidMinRequiredVersion',
+          'appStoreUrl',
+          'googlePlayUrl',
+          'title',
+          'content'
+        ])
+        && data.forceUpdate is bool
+        && data.iOSLatestVersion is string
+        && data.androidLatestVersion is string
+        && data.iOSMinRequiredVersion is string
+        && data.androidMinRequiredVersion is string
+        && data.appStoreUrl is string
+        && data.googlePlayUrl is string
+        && data.title is string
+        && data.content is string;
+    }
+
+    // settingsコレクションのルール
+    match /settings/{settingId} {
+      // 強制アップデート判定はログイン前にも必要なため公開読み取りを許可する。
+      allow read: if settingId == 'appVersion';
+
+      // 更新設定は管理者のみ書き込み可能。
+      allow create, update: if request.auth != null
+        && isAdmin()
+        && settingId == 'appVersion'
+        && hasRequiredAppVersionFields(request.resource.data);
+
+      allow delete: if request.auth != null
+        && isAdmin()
+        && settingId == 'appVersion';
+    }
+
     // usersコレクションのルール
     match /users/{userId} {
       // 公開情報の読み取りと検索クエリを許可
@@ -126,6 +196,20 @@ service cloud.firestore {
         allow create, update: if request.auth != null
           && request.auth.uid == userId
           && hasRequiredPrivateFields(request.resource.data);
+      }
+
+      // Display Lists Subcollection Rules
+      match /displayLists/{displayListId} {
+        allow read, list: if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.ownerId == userId
+          && hasRequiredDisplayListFields(request.resource.data);
+
+        allow delete: if request.auth != null
+          && request.auth.uid == userId;
       }
     }
 
