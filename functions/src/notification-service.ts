@@ -122,6 +122,30 @@ function getErrorCode(error: unknown): string {
   return "unknown_error";
 }
 
+export function isExampleEmail(email: string | null | undefined): boolean {
+  return typeof email === "string" && email.toLowerCase().endsWith("@example.com");
+}
+
+async function shouldAutoAcceptFriendRequest(receiveUserId: string): Promise<boolean> {
+  try {
+    const userRecord = await admin.auth().getUser(receiveUserId);
+    return isExampleEmail(userRecord.email);
+  } catch (error) {
+    console.error("友達申請の自動承認判定に失敗しました:", error);
+    return false;
+  }
+}
+
+async function acceptFriendRequestAutomatically(
+  notificationRef: admin.firestore.DocumentReference
+) {
+  await notificationRef.update({
+    status: "accepted",
+    isRead: true,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 async function getRecipientFcmTokens(
   receiveUserId: string,
   logContext: string
@@ -214,6 +238,19 @@ export const onNewFriendRequest = onDocumentCreated({
     // 友達申請通知かどうかを確認
     if (notification.type !== "friend") {
       console.log("友達申請以外の通知のため、処理をスキップします");
+      return;
+    }
+
+    if (notification.status !== "pending") {
+      console.log("保留中ではない友達申請のため、処理をスキップします");
+      return;
+    }
+
+    if (await shouldAutoAcceptFriendRequest(notification.receiveUserId)) {
+      await acceptFriendRequestAutomatically(snapshot.ref);
+      console.log(
+        `example.comアカウント宛の友達申請を自動承認しました: ${event.params.notificationId}`
+      );
       return;
     }
 

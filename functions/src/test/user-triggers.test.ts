@@ -1,6 +1,15 @@
 import { expect } from "chai";
 
 describe("User Triggers", () => {
+  describe("onUserCreated", () => {
+    it("should be importable", async () => {
+      const { onUserCreated } = await import("../handlers/user/triggers");
+
+      expect(onUserCreated).to.not.be.undefined;
+      expect(typeof onUserCreated).to.equal("function");
+    });
+  });
+
   describe("onUserUpdate", () => {
     it("should be importable", async () => {
       // トリガー関数がインポートできることを確認
@@ -17,6 +26,15 @@ describe("User Triggers", () => {
 
       expect(onUserDeleted).to.not.be.undefined;
       expect(typeof onUserDeleted).to.equal("function");
+    });
+  });
+
+  describe("onPrivateProfileUpdate", () => {
+    it("should be importable", async () => {
+      const { onPrivateProfileUpdate } = await import("../handlers/user/triggers");
+
+      expect(onPrivateProfileUpdate).to.not.be.undefined;
+      expect(typeof onPrivateProfileUpdate).to.equal("function");
     });
   });
 });
