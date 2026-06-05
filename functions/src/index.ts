@@ -27,7 +27,4 @@ export * from "./handlers/user/manual-sync";
 
 // 通知関連の関数をエクスポート
 export const sendNotification = notificationService.sendNotification;
-export const onNewFriendRequest = notificationService.onNewFriendRequest;
-export const onNewGroupInvitation = notificationService.onNewGroupInvitation;
-export const onNewReactionNotification = notificationService.onNewReactionNotification;
-export const onNewCommentNotification = notificationService.onNewCommentNotification;
+export const onNotificationCreated = notificationService.onNotificationCreated;

@@ -1,5 +1,7 @@
 import * as admin from "firebase-admin";
 
+type ListDataCache = Map<string, admin.firestore.DocumentData | null>;
+
 /**
  * リストメンバー変更時に関連する予定の可視性を更新する。
  *
@@ -50,6 +52,7 @@ export async function backfillAllScheduleVisibility(): Promise<{
   let batch = db.batch();
   let batchCount = 0;
   let updated = 0;
+  const listCache: ListDataCache = new Map();
 
   for (const scheduleDoc of schedulesSnapshot.docs) {
     const scheduleData = scheduleDoc.data();
@@ -59,7 +62,7 @@ export async function backfillAllScheduleVisibility(): Promise<{
       continue;
     }
 
-    const nextVisibleTo = await calculateVisibleTo(scheduleData);
+    const nextVisibleTo = await calculateVisibleTo(scheduleData, listCache);
     const currentVisibleTo = asStringArray(scheduleData.visibleTo);
 
     if (!arraysEqual([...nextVisibleTo].sort(), [...currentVisibleTo].sort())) {
@@ -110,6 +113,7 @@ async function recomputeSchedulesVisibilityForList(
     let batch = db.batch();
     let batchCount = 0;
     let updatedCount = 0;
+    const listCache: ListDataCache = new Map();
 
     for (const scheduleDoc of schedulesSnapshot.docs) {
       const scheduleData = scheduleDoc.data();
@@ -118,7 +122,7 @@ async function recomputeSchedulesVisibilityForList(
         scheduleData,
         options.removeListId
       );
-      const newVisibleTo = await calculateVisibleTo(nextScheduleData);
+      const newVisibleTo = await calculateVisibleTo(nextScheduleData, listCache);
       const updateData: admin.firestore.UpdateData<admin.firestore.DocumentData> = {
         visibleTo: newVisibleTo,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -162,7 +166,8 @@ async function recomputeSchedulesVisibilityForList(
 }
 
 async function calculateVisibleTo(
-  scheduleData: admin.firestore.DocumentData
+  scheduleData: admin.firestore.DocumentData,
+  listCache: ListDataCache = new Map()
 ): Promise<string[]> {
   const db = admin.firestore();
   const ownerId = typeof scheduleData.ownerId === "string" ? scheduleData.ownerId : "";
@@ -174,13 +179,17 @@ async function calculateVisibleTo(
   }
 
   for (const sharedListId of sharedLists) {
-    const listDoc = await db.collection("lists").doc(sharedListId).get();
-    if (!listDoc.exists) {
+    if (!listCache.has(sharedListId)) {
+      const listDoc = await db.collection("lists").doc(sharedListId).get();
+      listCache.set(sharedListId, listDoc.exists ? listDoc.data() || {} : null);
+    }
+
+    const listData = listCache.get(sharedListId);
+    if (!listData) {
       console.warn(`Shared list not found: ${sharedListId}`);
       continue;
     }
 
-    const listData = listDoc.data() || {};
     for (const memberId of asStringArray(listData.memberIds)) {
       visibleTo.add(memberId);
     }

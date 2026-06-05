@@ -2,6 +2,10 @@ import * as admin from "firebase-admin";
 import { onRequest } from "firebase-functions/v2/https";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { Request, Response } from "express";
+import {
+  AdminAuthError,
+  verifyAdminAuthorizationHeader,
+} from "./handlers/auth/admin";
 
 type MessageWithoutToken = Omit<admin.messaging.TokenMessage, "token">;
 
@@ -30,6 +34,16 @@ export const sendNotification = onRequest({
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
       return;
+    }
+
+    try {
+      await verifyAdminAuthorizationHeader(req.headers.authorization);
+    } catch (error) {
+      if (error instanceof AdminAuthError) {
+        res.status(error.status).send(error.response);
+        return;
+      }
+      throw error;
     }
 
     const payload = req.body;
@@ -192,13 +206,7 @@ function maskFcmToken(token: string): string {
   return token.length <= 20 ? token : `${token.substring(0, 20)}...`;
 }
 
-/**
- * 新しい友達申請が作成された時に自動的にプッシュ通知を送信する
- *
- * 注意: このトリガーはnotificationsコレクションのすべてのドキュメント作成をキャッチするため、
- * 関数内で通知タイプのフィルタリングが必要です。
- */
-export const onNewFriendRequest = onDocumentCreated({
+export const onNotificationCreated = onDocumentCreated({
   region: "asia-northeast1",
   document: "notifications/{notificationId}"
 }, async (event) => {
@@ -211,305 +219,257 @@ export const onNewFriendRequest = onDocumentCreated({
 
     const notification = snapshot.data();
 
-    // 友達申請通知かどうかを確認
-    if (notification.type !== "friend") {
-      console.log("友達申請以外の通知のため、処理をスキップします");
+    switch (notification.type) {
+    case "friend":
+      await sendFriendRequestNotification(
+        event.params.notificationId,
+        notification
+      );
+      return;
+    case "groupInvitation":
+      await sendGroupInvitationNotification(
+        event.params.notificationId,
+        notification
+      );
+      return;
+    case "reaction":
+      await sendReactionNotification(event.params.notificationId, notification);
+      return;
+    case "comment":
+      await sendCommentNotification(event.params.notificationId, notification);
+      return;
+    default:
       return;
     }
-
-    const fcmTokens = await getRecipientFcmTokens(
-      notification.receiveUserId,
-      "友達申請通知"
-    );
-    if (fcmTokens.length === 0) {
-      return;
-    }
-
-    // 通知メッセージを作成
-    const message: MessageWithoutToken = {
-      notification: {
-        title: "友達申請が届きました",
-        body: `${notification.sendUserDisplayName || "新しいユーザー"}さんから友達申請が届いています`,
-      },
-      data: {
-        type: "friend_request",
-        notificationId: event.params.notificationId,
-        fromUserId: notification.sendUserId,
-        toUserId: notification.receiveUserId,
-        timestamp: Date.now().toString(),
-      },
-      android: {
-        notification: {
-          icon: "notification_icon",
-          color: "#ffa600",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            badge: 1,
-            sound: "default",
-          },
-        },
-      },
-    };
-
-    // 通知送信
-    await sendToFcmTokens(fcmTokens, message, "友達申請通知");
   } catch (error) {
-    console.error("友達申請通知送信エラー:", error);
+    console.error("通知作成トリガーエラー:", error);
   }
 });
 
-/**
- * 新しいグループ招待が作成された時に自動的にプッシュ通知を送信する
- */
-export const onNewGroupInvitation = onDocumentCreated({
-  region: "asia-northeast1",
-  document: "notifications/{notificationId}"
-}, async (event) => {
+async function sendFriendRequestNotification(
+  notificationId: string,
+  notification: admin.firestore.DocumentData
+): Promise<void> {
+  const fcmTokens = await getRecipientFcmTokens(
+    notification.receiveUserId,
+    "友達申請通知"
+  );
+  if (fcmTokens.length === 0) {
+    return;
+  }
+
+  const message: MessageWithoutToken = {
+    notification: {
+      title: "友達申請が届きました",
+      body: `${notification.sendUserDisplayName || "新しいユーザー"}さんから友達申請が届いています`,
+    },
+    data: {
+      type: "friend_request",
+      notificationId,
+      fromUserId: notification.sendUserId,
+      toUserId: notification.receiveUserId,
+      timestamp: Date.now().toString(),
+    },
+    android: {
+      notification: {
+        icon: "notification_icon",
+        color: "#ffa600",
+        clickAction: "FLUTTER_NOTIFICATION_CLICK",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          badge: 1,
+          sound: "default",
+        },
+      },
+    },
+  };
+
+  await sendToFcmTokens(fcmTokens, message, "友達申請通知");
+}
+
+async function sendGroupInvitationNotification(
+  notificationId: string,
+  notification: admin.firestore.DocumentData
+): Promise<void> {
+  const fcmTokens = await getRecipientFcmTokens(
+    notification.receiveUserId,
+    "グループ招待通知"
+  );
+  if (fcmTokens.length === 0) {
+    return;
+  }
+
+  const groupDoc = await admin.firestore()
+    .collection("groups")
+    .doc(notification.groupId)
+    .get();
+
+  if (!groupDoc.exists) {
+    console.error("グループが存在しません:", notification.groupId);
+    return;
+  }
+
+  const groupData = groupDoc.data();
+  if (!groupData) {
+    console.error("グループデータが空です:", notification.groupId);
+    return;
+  }
+
+  const message: MessageWithoutToken = {
+    notification: {
+      title: "グループ招待が届きました",
+      body: `${notification.sendUserDisplayName || "新しいユーザー"}さんから「${groupData.name}」グループへの招待が届いています`,
+    },
+    data: {
+      type: "group_invitation",
+      notificationId,
+      fromUserId: notification.sendUserId,
+      toUserId: notification.receiveUserId,
+      groupId: notification.groupId,
+      groupName: groupData.name,
+      timestamp: Date.now().toString(),
+    },
+    android: {
+      notification: {
+        icon: "notification_icon",
+        color: "#ffa600",
+        clickAction: "FLUTTER_NOTIFICATION_CLICK",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          badge: 1,
+          sound: "default",
+        },
+      },
+    },
+  };
+
+  await sendToFcmTokens(fcmTokens, message, "グループ招待通知");
+}
+
+async function sendReactionNotification(
+  notificationId: string,
+  notification: admin.firestore.DocumentData
+): Promise<void> {
+  const fcmTokens = await getRecipientFcmTokens(
+    notification.receiveUserId,
+    "リアクション通知"
+  );
+  if (fcmTokens.length === 0) {
+    return;
+  }
+
+  const message: MessageWithoutToken = {
+    notification: {
+      title: "新しいリアクション",
+      body: `${notification.sendUserDisplayName || "新しいユーザー"}さんがあなたの投稿にリアクションしました`,
+    },
+    data: {
+      type: "reaction",
+      notificationId,
+      fromUserId: notification.sendUserId,
+      toUserId: notification.receiveUserId,
+      relatedItemId: notification.relatedItemId,
+      interactionId: notification.interactionId,
+      timestamp: Date.now().toString(),
+    },
+    android: {
+      notification: {
+        icon: "notification_icon",
+        color: "#ffa600",
+        clickAction: "FLUTTER_NOTIFICATION_CLICK",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          badge: 1,
+          sound: "default",
+        },
+      },
+    },
+  };
+
+  await sendToFcmTokens(fcmTokens, message, "リアクション通知");
+}
+
+async function sendCommentNotification(
+  notificationId: string,
+  notification: admin.firestore.DocumentData
+): Promise<void> {
+  const fcmTokens = await getRecipientFcmTokens(
+    notification.receiveUserId,
+    "コメント通知"
+  );
+  if (fcmTokens.length === 0) {
+    return;
+  }
+
+  const commentContent = await getNotificationCommentContent(notification);
+
+  const message: MessageWithoutToken = {
+    notification: {
+      title: "新しいコメント",
+      body: `${notification.sendUserDisplayName || "新しいユーザー"}さんがあなたの投稿にコメントしました${commentContent ? ": " + commentContent : ""}`,
+    },
+    data: {
+      type: "comment",
+      notificationId,
+      fromUserId: notification.sendUserId,
+      toUserId: notification.receiveUserId,
+      relatedItemId: notification.relatedItemId,
+      interactionId: notification.interactionId,
+      commentContent,
+      timestamp: Date.now().toString(),
+    },
+    android: {
+      notification: {
+        icon: "notification_icon",
+        color: "#ffa600",
+        clickAction: "FLUTTER_NOTIFICATION_CLICK",
+      },
+    },
+    apns: {
+      payload: {
+        aps: {
+          badge: 1,
+          sound: "default",
+        },
+      },
+    },
+  };
+
+  await sendToFcmTokens(fcmTokens, message, "コメント通知");
+}
+
+async function getNotificationCommentContent(
+  notification: admin.firestore.DocumentData
+): Promise<string> {
+  if (!notification.interactionId) {
+    return "";
+  }
+
   try {
-    const snapshot = event.data;
-    if (!snapshot) {
-      console.log("データが存在しません");
-      return;
-    }
-
-    const notification = snapshot.data();
-
-    // グループ招待通知かどうかを確認
-    if (notification.type !== "groupInvitation") {
-      console.log("グループ招待以外の通知のため、処理をスキップします");
-      return;
-    }
-
-    const fcmTokens = await getRecipientFcmTokens(
-      notification.receiveUserId,
-      "グループ招待通知"
-    );
-    if (fcmTokens.length === 0) {
-      return;
-    }
-
-    // グループ情報を取得
-    const groupDoc = await admin.firestore()
-      .collection("groups")
-      .doc(notification.groupId)
+    const commentDoc = await admin.firestore()
+      .collection("schedules")
+      .doc(notification.relatedItemId)
+      .collection("comments")
+      .doc(notification.interactionId)
       .get();
 
-    if (!groupDoc.exists) {
-      console.error("グループが存在しません:", notification.groupId);
-      return;
+    const commentContent = commentDoc.data()?.content || "";
+    if (commentContent.length > 50) {
+      return `${commentContent.substring(0, 47)}...`;
     }
 
-    const groupData = groupDoc.data();
-    if (!groupData) {
-      console.error("グループデータが空です:", notification.groupId);
-      return;
-    }
-
-    // 通知メッセージを作成
-    const message: MessageWithoutToken = {
-      notification: {
-        title: "グループ招待が届きました",
-        body: `${notification.sendUserDisplayName || "新しいユーザー"}さんから「${groupData.name}」グループへの招待が届いています`,
-      },
-      data: {
-        type: "group_invitation",
-        notificationId: event.params.notificationId,
-        fromUserId: notification.sendUserId,
-        toUserId: notification.receiveUserId,
-        groupId: notification.groupId,
-        groupName: groupData.name,
-        timestamp: Date.now().toString(),
-      },
-      android: {
-        notification: {
-          icon: "notification_icon",
-          color: "#ffa600",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            badge: 1,
-            sound: "default",
-          },
-        },
-      },
-    };
-
-    // 通知送信
-    await sendToFcmTokens(fcmTokens, message, "グループ招待通知");
-  } catch (error) {
-    console.error("グループ招待通知送信エラー:", error);
+    return commentContent;
+  } catch (e) {
+    console.error("コメントデータ取得エラー:", e);
+    return "";
   }
-});
-
-/**
- * 新しいリアクション通知が作成された時に自動的にプッシュ通知を送信する
- */
-export const onNewReactionNotification = onDocumentCreated({
-  region: "asia-northeast1",
-  document: "notifications/{notificationId}"
-}, async (event) => {
-  try {
-    const snapshot = event.data;
-    if (!snapshot) {
-      console.log("データが存在しません");
-      return;
-    }
-
-    const notification = snapshot.data();
-
-    // リアクション通知かどうかを確認
-    if (notification.type !== "reaction") {
-      console.log("リアクション以外の通知のため、処理をスキップします");
-      return;
-    }
-
-    const fcmTokens = await getRecipientFcmTokens(
-      notification.receiveUserId,
-      "リアクション通知"
-    );
-    if (fcmTokens.length === 0) {
-      return;
-    }
-
-    // 通知メッセージを作成
-    const message: MessageWithoutToken = {
-      notification: {
-        title: "新しいリアクション",
-        body: `${notification.sendUserDisplayName || "新しいユーザー"}さんがあなたの投稿にリアクションしました`,
-      },
-      data: {
-        type: "reaction",
-        notificationId: event.params.notificationId,
-        fromUserId: notification.sendUserId,
-        toUserId: notification.receiveUserId,
-        relatedItemId: notification.relatedItemId,
-        interactionId: notification.interactionId,
-        timestamp: Date.now().toString(),
-      },
-      android: {
-        notification: {
-          icon: "notification_icon",
-          color: "#ffa600",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            badge: 1,
-            sound: "default",
-          },
-        },
-      },
-    };
-
-    // 通知送信
-    await sendToFcmTokens(fcmTokens, message, "リアクション通知");
-  } catch (error) {
-    console.error("リアクション通知送信エラー:", error);
-  }
-});
-
-/**
- * 新しいコメント通知が作成された時に自動的にプッシュ通知を送信する
- */
-export const onNewCommentNotification = onDocumentCreated({
-  region: "asia-northeast1",
-  document: "notifications/{notificationId}"
-}, async (event) => {
-  try {
-    const snapshot = event.data;
-    if (!snapshot) {
-      console.log("データが存在しません");
-      return;
-    }
-
-    const notification = snapshot.data();
-
-    // コメント通知かどうかを確認
-    if (notification.type !== "comment") {
-      console.log("コメント以外の通知のため、処理をスキップします");
-      return;
-    }
-
-    const fcmTokens = await getRecipientFcmTokens(
-      notification.receiveUserId,
-      "コメント通知"
-    );
-    if (fcmTokens.length === 0) {
-      return;
-    }
-
-    // コメントのコンテンツを取得
-    let commentContent = "";
-    if (notification.interactionId) {
-      try {
-        const commentDoc = await admin.firestore()
-          .collection("schedules")
-          .doc(notification.relatedItemId)
-          .collection("comments")
-          .doc(notification.interactionId)
-          .get();
-
-        if (commentDoc.exists) {
-          const commentData = commentDoc.data();
-          if (commentData) {
-            commentContent = commentData.content || "";
-
-            // コメントが長すぎる場合はトリミング
-            if (commentContent.length > 50) {
-              commentContent = `${commentContent.substring(0, 47)}...`;
-            }
-          }
-        }
-      } catch (e) {
-        console.error("コメントデータ取得エラー:", e);
-      }
-    }
-
-    // 通知メッセージを作成
-    const message: MessageWithoutToken = {
-      notification: {
-        title: "新しいコメント",
-        body: `${notification.sendUserDisplayName || "新しいユーザー"}さんがあなたの投稿にコメントしました${commentContent ? ": " + commentContent : ""}`,
-      },
-      data: {
-        type: "comment",
-        notificationId: event.params.notificationId,
-        fromUserId: notification.sendUserId,
-        toUserId: notification.receiveUserId,
-        relatedItemId: notification.relatedItemId,
-        interactionId: notification.interactionId,
-        commentContent: commentContent,
-        timestamp: Date.now().toString(),
-      },
-      android: {
-        notification: {
-          icon: "notification_icon",
-          color: "#ffa600",
-          clickAction: "FLUTTER_NOTIFICATION_CLICK",
-        },
-      },
-      apns: {
-        payload: {
-          aps: {
-            badge: 1,
-            sound: "default",
-          },
-        },
-      },
-    };
-
-    // 通知送信
-    await sendToFcmTokens(fcmTokens, message, "コメント通知");
-  } catch (error) {
-    console.error("コメント通知送信エラー:", error);
-  }
-});
+}

@@ -19,8 +19,8 @@ export const sendMorningScheduleDigest = functions.onSchedule(
     schedule: "0 0-9 * * *",
     timeZone: "Asia/Tokyo",
     region: "asia-northeast1",
-    memory: "1GiB",
-    timeoutSeconds: 540,
+    memory: "256MiB",
+    timeoutSeconds: 120,
   },
   async () => {
     const notifyHour = getJstHour();

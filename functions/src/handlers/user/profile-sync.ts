@@ -5,6 +5,8 @@ export interface UserProfileSnapshot {
   iconUrl?: string | null;
 }
 
+export const PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT = 500;
+
 export interface BuildUserProfileUpdatesInput {
   userId: string;
   before: UserProfileSnapshot;
@@ -171,6 +173,7 @@ async function updateCollectionGroupSnapshots(
     .firestore()
     .collectionGroup(collectionId)
     .where("userId", "==", userId)
+    .limit(PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT)
     .get();
 
   await commitBatches(snapshot.docs, (batch, doc) => {
@@ -191,6 +194,7 @@ async function updateScheduleOwnerSnapshots(
     .firestore()
     .collection("schedules")
     .where("ownerId", "==", userId)
+    .limit(PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT)
     .get();
 
   await commitBatches(snapshot.docs, (batch, doc) => {
@@ -207,8 +211,14 @@ async function updateNotificationSnapshots(
   }
 
   const [sentSnapshot, receivedSnapshot] = await Promise.all([
-    admin.firestore().collection("notifications").where("sendUserId", "==", userId).get(),
-    admin.firestore().collection("notifications").where("receiveUserId", "==", userId).get(),
+    admin.firestore().collection("notifications")
+      .where("sendUserId", "==", userId)
+      .limit(PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT)
+      .get(),
+    admin.firestore().collection("notifications")
+      .where("receiveUserId", "==", userId)
+      .limit(PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT)
+      .get(),
   ]);
   const docsById = new Map<string, admin.firestore.QueryDocumentSnapshot>();
 
