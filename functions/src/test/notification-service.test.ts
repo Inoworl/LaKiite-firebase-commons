@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import firebaseAdmin = require("firebase-admin");
+import { isExampleEmail } from "../notification-service";
 
 type SendNotificationRequest = Parameters<
   typeof import("../notification-service").sendNotification
@@ -14,6 +15,7 @@ type NotificationCreatedEvent = Parameters<
 type AdminModule = {
   auth?: () => {
     verifyIdToken: (token: string) => Promise<Record<string, unknown>>;
+    getUser?: (userId: string) => Promise<Record<string, unknown>>;
   };
   firestore?: () => {
     collection: (name: string) => CollectionMock;
@@ -281,6 +283,10 @@ describe("Notification service exports", () => {
   describe("onNotificationCreated", () => {
     it("dispatches friend request notifications with the legacy payload", async () => {
       const sentEachBatches: Record<string, unknown>[][] = [];
+      const restoreAdminAuth = replaceAdminExport("auth", () => ({
+        verifyIdToken: async () => ({ uid: "admin-user", admin: true }),
+        getUser: async () => ({ email: "receive-user@example.jp" }),
+      }));
       const restoreMessaging = mockMessaging([], sentEachBatches);
       const restoreFirestore = mockFirestore({
         "users/receive-user": {
@@ -294,6 +300,7 @@ describe("Notification service exports", () => {
         await notificationService.onNotificationCreated.run(
           createNotificationEvent("notification-1", {
             type: "friend",
+            status: "pending",
             sendUserId: "send-user",
             receiveUserId: "receive-user",
             sendUserDisplayName: "送信者",
@@ -317,6 +324,7 @@ describe("Notification service exports", () => {
       } finally {
         restoreFirestore();
         restoreMessaging();
+        restoreAdminAuth();
       }
     });
 
@@ -442,6 +450,19 @@ describe("Notification service exports", () => {
         restoreFirestore();
         restoreMessaging();
       }
+    });
+  });
+
+  describe("isExampleEmail", () => {
+    it("returns true for example.com email addresses", () => {
+      expect(isExampleEmail("test@example.com")).to.equal(true);
+      expect(isExampleEmail("TEST@EXAMPLE.COM")).to.equal(true);
+    });
+
+    it("returns false for non-example.com email addresses", () => {
+      expect(isExampleEmail("test@example.jp")).to.equal(false);
+      expect(isExampleEmail(null)).to.equal(false);
+      expect(isExampleEmail(undefined)).to.equal(false);
     });
   });
 });

@@ -1,6 +1,10 @@
 import * as functions from "firebase-functions/v2/firestore";
 import * as admin from "firebase-admin";
 import { cleanupRetiredUserReferences } from "./deletion-cleanup";
+import {
+  getRemovedFriendIds,
+  mirrorRemovedFriendReferences,
+} from "./friend-sync";
 import { processUserUpdates } from "./batch-sync";
 import { buildUserProfileUpdates } from "./profile-sync";
 import { onScheduleDigestUserCreated } from "../schedule-digest/triggers";
@@ -71,6 +75,40 @@ export const onUserUpdate = functions.onDocumentUpdated(
     } catch (error) {
       console.error("ユーザー更新履歴記録エラー:", error);
       // エラーが発生してもトリガーは失敗させない
+    }
+  }
+);
+
+/**
+ * ユーザーが友達を削除した時に、相手側のfriends配列と双方のリストからも参照を外す。
+ */
+export const onPrivateProfileUpdate = functions.onDocumentUpdated(
+  {
+    document: "users/{userId}/private/profile",
+    region: "asia-northeast1",
+  },
+  async (event) => {
+    try {
+      const userId = event.params.userId;
+      const before = event.data?.before.data();
+      const after = event.data?.after.data();
+
+      if (!before || !after) {
+        console.log("プライベートプロフィールデータが存在しません");
+        return;
+      }
+
+      const removedFriendIds = getRemovedFriendIds(before, after);
+      if (removedFriendIds.length === 0) {
+        return;
+      }
+
+      await mirrorRemovedFriendReferences(userId, removedFriendIds);
+      console.log(
+        `友達削除の同期完了: ${userId}, removed=${removedFriendIds.join(",")}`
+      );
+    } catch (error) {
+      console.error("友達削除の同期エラー:", error);
     }
   }
 );

@@ -28,4 +28,13 @@ describe("User Triggers", () => {
       expect(typeof onUserDeleted).to.equal("function");
     });
   });
+
+  describe("onPrivateProfileUpdate", () => {
+    it("should be importable", async () => {
+      const { onPrivateProfileUpdate } = await import("../handlers/user/triggers");
+
+      expect(onPrivateProfileUpdate).to.not.be.undefined;
+      expect(typeof onPrivateProfileUpdate).to.equal("function");
+    });
+  });
 });
