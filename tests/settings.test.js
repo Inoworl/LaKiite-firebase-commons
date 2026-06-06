@@ -32,6 +32,15 @@ describe('Settings Collection Security Rules', () => {
       await expectSuccess(db.doc('settings/appVersion').get());
     });
 
+    test('未認証ユーザーはappVersionV2を読み取れる', async () => {
+      const context = await setupTestEnvironment(null, {
+        'settings/appVersionV2': appVersionSettings()
+      });
+      const db = context.firestore();
+
+      await expectSuccess(db.doc('settings/appVersionV2').get());
+    });
+
     test('未認証ユーザーはappVersion以外のsettingsを読み取れない', async () => {
       const context = await setupTestEnvironment(null, {
         'settings/privateConfig': { value: 'secret' }
@@ -48,9 +57,13 @@ describe('Settings Collection Security Rules', () => {
       await expectFailure(
         db.doc('settings/appVersion').set(appVersionSettings())
       );
+
+      await expectFailure(
+        db.doc('settings/appVersionV2').set(appVersionSettings())
+      );
     });
 
-    test('管理者はappVersionを書き込める', async () => {
+    test('管理者はappVersionとappVersionV2を書き込める', async () => {
       const context = await setupTestEnvironment({
         uid: 'admin1',
         admin: true
@@ -59,6 +72,10 @@ describe('Settings Collection Security Rules', () => {
 
       await expectSuccess(
         db.doc('settings/appVersion').set(appVersionSettings())
+      );
+
+      await expectSuccess(
+        db.doc('settings/appVersionV2').set(appVersionSettings())
       );
     });
 
@@ -73,6 +90,10 @@ describe('Settings Collection Security Rules', () => {
 
       await expectFailure(
         db.doc('settings/appVersion').set(invalidSettings)
+      );
+
+      await expectFailure(
+        db.doc('settings/appVersionV2').set(invalidSettings)
       );
     });
   });
