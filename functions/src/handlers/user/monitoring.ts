@@ -29,6 +29,7 @@ export const batchProcessMonitoring = functions.onSchedule(
         .where("isProcessed", "==", false)
         .where("updatedAt", ">=", admin.firestore.Timestamp.fromDate(yesterday))
         .where("updatedAt", "<", admin.firestore.Timestamp.fromDate(today))
+        .count()
         .get();
 
       // 失敗した処理を確認
@@ -38,6 +39,7 @@ export const batchProcessMonitoring = functions.onSchedule(
         .where("retryCount", ">=", 3)
         .where("updatedAt", ">=", admin.firestore.Timestamp.fromDate(yesterday))
         .where("updatedAt", "<", admin.firestore.Timestamp.fromDate(today))
+        .count()
         .get();
 
       // 処理済みの履歴を確認
@@ -47,14 +49,19 @@ export const batchProcessMonitoring = functions.onSchedule(
         .where("isProcessed", "==", true)
         .where("updatedAt", ">=", admin.firestore.Timestamp.fromDate(yesterday))
         .where("updatedAt", "<", admin.firestore.Timestamp.fromDate(today))
+        .count()
         .get();
+
+      const unprocessedCount = unprocessedSnapshot.data().count;
+      const failedCount = failedSnapshot.data().count;
+      const processedCount = processedSnapshot.data().count;
 
       const stats = {
         date: yesterday.toISOString().split("T")[0],
-        unprocessedCount: unprocessedSnapshot.size,
-        failedCount: failedSnapshot.size,
-        processedCount: processedSnapshot.size,
-        totalCount: unprocessedSnapshot.size + failedSnapshot.size + processedSnapshot.size,
+        unprocessedCount,
+        failedCount,
+        processedCount,
+        totalCount: unprocessedCount + failedCount + processedCount,
       };
 
       console.log("バッチ処理統計:", stats);

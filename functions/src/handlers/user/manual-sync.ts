@@ -1,6 +1,7 @@
 import * as functions from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import { processUserUpdates, UserUpdateData } from "./batch-sync";
+import { AdminAuthError, verifyAdminAuthorizationHeader } from "../auth/admin";
 
 /**
  * 手動でバッチ処理を実行するHTTPS関数
@@ -27,28 +28,17 @@ export const manualUserDataSync = functions.onRequest(
         return;
       }
 
-      // 管理者認証チェック
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        res.status(401).send({ error: "認証が必要です" });
-        return;
-      }
-
-      const token = authHeader.split("Bearer ")[1];
       let decodedToken;
-
       try {
-        decodedToken = await admin.auth().verifyIdToken(token);
+        decodedToken = await verifyAdminAuthorizationHeader(
+          req.headers.authorization
+        );
       } catch (error) {
-        res.status(401).send({ error: "無効なトークンです" });
-        return;
-      }
-
-      // 管理者権限チェック（実装は要件に応じて調整）
-      // 現在は全認証済みユーザーに許可（本番環境では制限を追加）
-      if (!decodedToken.uid) {
-        res.status(403).send({ error: "管理者権限が必要です" });
-        return;
+        if (error instanceof AdminAuthError) {
+          res.status(error.status).send(error.response);
+          return;
+        }
+        throw error;
       }
 
       console.log(`手動同期実行: ユーザー ${decodedToken.uid}`);
@@ -216,15 +206,15 @@ export const getUserDataSyncStatus = functions.onRequest(
         return;
       }
 
-      // 認証チェック
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        res.status(401).send({ error: "認証が必要です" });
-        return;
+      try {
+        await verifyAdminAuthorizationHeader(req.headers.authorization);
+      } catch (error) {
+        if (error instanceof AdminAuthError) {
+          res.status(error.status).send(error.response);
+          return;
+        }
+        throw error;
       }
-
-      const token = authHeader.split("Bearer ")[1];
-      await admin.auth().verifyIdToken(token);
 
       // 統計情報を取得
       const [pending, failed, processed] = await Promise.all([
@@ -232,16 +222,19 @@ export const getUserDataSyncStatus = functions.onRequest(
           .firestore()
           .collection("user_update_history")
           .where("isProcessed", "==", false)
+          .count()
           .get(),
         admin
           .firestore()
           .collection("user_update_history")
           .where("retryCount", ">=", 3)
+          .count()
           .get(),
         admin
           .firestore()
           .collection("user_update_history")
           .where("isProcessed", "==", true)
+          .count()
           .get(),
       ]);
 
@@ -254,10 +247,11 @@ export const getUserDataSyncStatus = functions.onRequest(
         .get();
 
       const status = {
-        pending: pending.size,
-        failed: failed.size,
-        processed: processed.size,
-        total: pending.size + failed.size + processed.size,
+        pending: pending.data().count,
+        failed: failed.data().count,
+        processed: processed.data().count,
+        total:
+          pending.data().count + failed.data().count + processed.data().count,
         lastBatchStats: latestStats.empty ? null : latestStats.docs[0].data(),
         timestamp: new Date().toISOString(),
       };
