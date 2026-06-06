@@ -56,3 +56,57 @@ export const onDeleteReaction = functions.onDocumentDeleted({
     return null;
   }
 });
+
+/**
+ * スケジュールのコメントが追加されたときに自動的にカウンターを更新する
+ */
+export const onCreateComment = functions.onDocumentCreated({
+  document: "schedules/{scheduleId}/comments/{commentId}",
+  region: "asia-northeast1"
+}, async (event) => {
+  try {
+    const scheduleId = event.params.scheduleId;
+    console.log(`コメント追加: scheduleId=${scheduleId}, commentId=${event.params.commentId}`);
+
+    await admin.firestore()
+      .collection("schedules")
+      .doc(scheduleId)
+      .update({
+        "commentCount": admin.firestore.FieldValue.increment(1),
+        "updatedAt": admin.firestore.FieldValue.serverTimestamp()
+      });
+
+    console.log(`スケジュール(${scheduleId})のコメント数を増加しました`);
+    return null;
+  } catch (error) {
+    console.error("コメント数増加エラー:", error);
+    return null;
+  }
+});
+
+/**
+ * スケジュールのコメントが削除されたときに自動的にカウンターを更新する
+ */
+export const onDeleteComment = functions.onDocumentDeleted({
+  document: "schedules/{scheduleId}/comments/{commentId}",
+  region: "asia-northeast1"
+}, async (event) => {
+  try {
+    const scheduleId = event.params.scheduleId;
+    console.log(`コメント削除: scheduleId=${scheduleId}, commentId=${event.params.commentId}`);
+
+    await admin.firestore()
+      .collection("schedules")
+      .doc(scheduleId)
+      .update({
+        "commentCount": admin.firestore.FieldValue.increment(-1),
+        "updatedAt": admin.firestore.FieldValue.serverTimestamp()
+      });
+
+    console.log(`スケジュール(${scheduleId})のコメント数を減少しました`);
+    return null;
+  } catch (error) {
+    console.error("コメント数減少エラー:", error);
+    return null;
+  }
+});
