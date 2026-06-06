@@ -83,7 +83,7 @@ async function main() {
   const settings = buildSettings();
 
   console.log(`Project: ${projectId}`);
-  console.log('Document: settings/appVersion');
+  console.log('Documents: settings/appVersion, settings/appVersionV2');
   console.log(JSON.stringify(settings, null, 2));
 
   if (!shouldApply) {
@@ -93,8 +93,11 @@ async function main() {
 
   const admin = requireFirebaseAdmin();
   admin.initializeApp({projectId});
-  await admin.firestore().doc('settings/appVersion').set(settings, {merge: true});
-  console.log('settings/appVersion を更新しました。');
+  const batch = admin.firestore().batch();
+  batch.set(admin.firestore().doc('settings/appVersion'), settings, {merge: true});
+  batch.set(admin.firestore().doc('settings/appVersionV2'), settings, {merge: true});
+  await batch.commit();
+  console.log('settings/appVersion と settings/appVersionV2 を更新しました。');
 }
 
 main().catch((error) => {

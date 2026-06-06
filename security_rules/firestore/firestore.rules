@@ -162,17 +162,17 @@ service cloud.firestore {
     // settingsコレクションのルール
     match /settings/{settingId} {
       // 強制アップデート判定はログイン前にも必要なため公開読み取りを許可する。
-      allow read: if settingId == 'appVersion';
+      allow read: if settingId in ['appVersion', 'appVersionV2'];
 
       // 更新設定は管理者のみ書き込み可能。
       allow create, update: if request.auth != null
         && isAdmin()
-        && settingId == 'appVersion'
+        && settingId in ['appVersion', 'appVersionV2']
         && hasRequiredAppVersionFields(request.resource.data);
 
       allow delete: if request.auth != null
         && isAdmin()
-        && settingId == 'appVersion';
+        && settingId in ['appVersion', 'appVersionV2'];
     }
 
     match /scheduleDigestSettings/{userId} {
