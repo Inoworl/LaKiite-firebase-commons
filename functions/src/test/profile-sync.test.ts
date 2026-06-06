@@ -1,6 +1,16 @@
 import { expect } from "chai";
 
 describe("Profile Snapshot Sync", () => {
+  describe("PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT", () => {
+    it("should cap each snapshot sync query", async () => {
+      const { PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT } = await import(
+        "../handlers/user/profile-sync"
+      );
+
+      expect(PROFILE_SNAPSHOT_SYNC_QUERY_LIMIT).to.equal(500);
+    });
+  });
+
   describe("buildUserProfileUpdates", () => {
     it("should detect display name and icon url changes", async () => {
       const { buildUserProfileUpdates } = await import(

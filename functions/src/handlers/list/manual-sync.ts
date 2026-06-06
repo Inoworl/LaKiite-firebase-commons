@@ -1,5 +1,5 @@
 import * as functions from "firebase-functions/v2/https";
-import * as admin from "firebase-admin";
+import { AdminAuthError, verifyAdminAuthorizationHeader } from "../auth/admin";
 import { backfillAllScheduleVisibility } from "./utils";
 
 /**
@@ -30,14 +30,15 @@ export const backfillScheduleVisibility = functions.onRequest(
         return;
       }
 
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        res.status(401).send({ error: "認証が必要です" });
-        return;
+      try {
+        await verifyAdminAuthorizationHeader(req.headers.authorization);
+      } catch (error) {
+        if (error instanceof AdminAuthError) {
+          res.status(error.status).send(error.response);
+          return;
+        }
+        throw error;
       }
-
-      const token = authHeader.split("Bearer ")[1];
-      await admin.auth().verifyIdToken(token);
 
       const result = await backfillAllScheduleVisibility();
       res.status(200).send({
