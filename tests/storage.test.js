@@ -95,6 +95,51 @@ describe('Storage Security Rules', () => {
     });
   });
 
+  describe('リスト画像', () => {
+    test('リスト所有者はリスト画像をアップロードできる', async () => {
+      const storage = testEnv.authenticatedContext('owner1').storage();
+
+      await assertSucceeds(
+        storage.ref('v1/lists/icon/owner1/list1').putString('image-bytes', 'raw', {
+          contentType: 'image/png'
+        })
+      );
+    });
+
+    test('他人のリスト画像はアップロードできない', async () => {
+      const storage = testEnv.authenticatedContext('user1').storage();
+
+      await assertFails(
+        storage.ref('v1/lists/icon/owner1/list1').putString('image-bytes', 'raw', {
+          contentType: 'image/png'
+        })
+      );
+    });
+
+    test('画像以外のリスト画像ファイルはアップロードできない', async () => {
+      const storage = testEnv.authenticatedContext('owner1').storage();
+
+      await assertFails(
+        storage.ref('v1/lists/icon/owner1/list1').putString('plain-text', 'raw', {
+          contentType: 'text/plain'
+        })
+      );
+    });
+
+    test('認証済みユーザーはリスト画像を読み取れる', async () => {
+      await testEnv.withSecurityRulesDisabled(async (context) => {
+        await context
+          .storage()
+          .ref('v1/lists/icon/owner1/list1')
+          .putString('image-bytes', 'raw', { contentType: 'image/png' });
+      });
+
+      const storage = testEnv.authenticatedContext('user2').storage();
+
+      await assertSucceeds(storage.ref('v1/lists/icon/owner1/list1').getMetadata());
+    });
+  });
+
   describe('未定義パス', () => {
     test('許可されていないパスには書き込めない', async () => {
       const storage = testEnv.authenticatedContext('user1').storage();
