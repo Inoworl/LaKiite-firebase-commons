@@ -293,7 +293,7 @@ jobs:
       - name: Deploy Firebase resources
         run: |
           echo "🚀 Firebaseセキュリティルール、Functions、Indexesをデプロイ中..."
-          firebase deploy --only firestore:rules,storage,firestore:indexes,functions --project "$PROD_FIREBASE_PROJECT_ID"
+          firebase deploy --only firestore:rules,storage,firestore:indexes,functions --project "$PROD_FIREBASE_PROJECT_ID" --force
           echo "✅ デプロイが完了しました"
         env:
           PROD_FIREBASE_PROJECT_ID: ${{ vars.PROD_FIREBASE_PROJECT_ID }}
