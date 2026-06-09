@@ -36,8 +36,7 @@ service cloud.firestore {
 
     // スケジュールの必須フィールドを確認する関数
     function hasRequiredScheduleFields(data) {
-      return data.title is string
-        && data.description is string
+      return hasValidScheduleDetails(data)
         && data.startDateTime != null
         && data.endDateTime != null
         && (!data.keys().hasAny(['isAllDay']) || data.isAllDay is bool)
@@ -47,6 +46,32 @@ service cloud.firestore {
         && data.ownerDisplayName is string
         && data.reactionCount is number
         && data.commentCount is number
+        && data.createdAt != null
+        && data.updatedAt != null;
+    }
+
+    function hasValidScheduleDetails(data) {
+      return (
+        data.title is string
+        && data.description is string
+        && hasOptionalStringOrNull(data, 'location')
+      ) || (
+        data.encrypted == true
+        && data.encryptionVersion is int
+        && data.encryptedPayload is map
+        && data.encryptedPayload.cipherText is string
+        && data.encryptedPayload.nonce is string
+        && data.encryptedPayload.mac is string
+        && data.encryptedPayload.algorithm == 'AES-GCM'
+        && data.encryptedKeys is map
+        && !data.keys().hasAny(['title', 'description', 'location'])
+      );
+    }
+
+    function hasRequiredEncryptionPublicKeyFields(data) {
+      return data.publicKey is string
+        && data.keyVersion is int
+        && data.algorithm == 'X25519'
         && data.createdAt != null
         && data.updatedAt != null;
     }
@@ -241,6 +266,20 @@ service cloud.firestore {
 
         allow delete: if request.auth != null
           && request.auth.uid == userId;
+      }
+
+      match /encryption/{docId} {
+        allow read: if request.auth != null
+          && docId == 'current';
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && docId == 'current'
+          && hasRequiredEncryptionPublicKeyFields(request.resource.data);
+
+        allow delete: if request.auth != null
+          && request.auth.uid == userId
+          && docId == 'current';
       }
     }
 

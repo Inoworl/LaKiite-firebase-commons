@@ -128,6 +128,86 @@ describe('Schedules Collection Security Rules', () => {
       await expectSuccess(db.doc('schedules/newSchedule').set(scheduleData));
     });
 
+    test('認証済みユーザーは暗号化済みスケジュールを作成できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      const scheduleData = {
+        startDateTime: new Date(),
+        endDateTime: new Date(),
+        ownerId: 'user1',
+        sharedLists: [],
+        visibleTo: ['user1', 'user2'],
+        ownerDisplayName: 'Test User',
+        reactionCount: 0,
+        commentCount: 0,
+        encrypted: true,
+        encryptionVersion: 1,
+        encryptedPayload: {
+          cipherText: 'payload-cipher',
+          nonce: 'payload-nonce',
+          mac: 'payload-mac',
+          algorithm: 'AES-GCM'
+        },
+        encryptedKeys: {
+          user1: {
+            encryptedScheduleKey: 'key-cipher-1',
+            nonce: 'key-nonce-1',
+            mac: 'key-mac-1',
+            ephemeralPublicKey: 'ephemeral-public-key-1',
+            algorithm: 'X25519+AES-GCM',
+            keyVersion: 1
+          },
+          user2: {
+            encryptedScheduleKey: 'key-cipher-2',
+            nonce: 'key-nonce-2',
+            mac: 'key-mac-2',
+            ephemeralPublicKey: 'ephemeral-public-key-2',
+            algorithm: 'X25519+AES-GCM',
+            keyVersion: 1
+          }
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await expectSuccess(
+        db.doc('schedules/encryptedSchedule').set(scheduleData)
+      );
+    });
+
+    test('暗号化済みスケジュールに平文詳細フィールドを混在できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      const invalidScheduleData = {
+        title: 'Plain title',
+        startDateTime: new Date(),
+        endDateTime: new Date(),
+        ownerId: 'user1',
+        sharedLists: [],
+        visibleTo: ['user1'],
+        ownerDisplayName: 'Test User',
+        reactionCount: 0,
+        commentCount: 0,
+        encrypted: true,
+        encryptionVersion: 1,
+        encryptedPayload: {
+          cipherText: 'payload-cipher',
+          nonce: 'payload-nonce',
+          mac: 'payload-mac',
+          algorithm: 'AES-GCM'
+        },
+        encryptedKeys: {},
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await expectFailure(
+        db.doc('schedules/invalidEncryptedSchedule').set(invalidScheduleData)
+      );
+    });
+
     test('認証済みユーザーは終日スケジュールを作成できる', async () => {
       const context = await setupTestEnvironment({ uid: 'user1' });
       const db = context.firestore();

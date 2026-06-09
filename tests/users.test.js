@@ -248,4 +248,52 @@ describe('Users Collection Security Rules', () => {
       );
     });
   });
+
+  describe('暗号化公開鍵サブコレクション', () => {
+    const publicKeyData = {
+      publicKey: 'base64-public-key',
+      keyVersion: 1,
+      algorithm: 'X25519',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    test('認証済みユーザーは他ユーザーの公開鍵を読み取れる', async () => {
+      const mockData = {
+        'users/user1/encryption/current': publicKeyData
+      };
+
+      const context = await setupTestEnvironment({ uid: 'user2' }, mockData);
+      const db = context.firestore();
+
+      await expectSuccess(db.doc('users/user1/encryption/current').get());
+    });
+
+    test('ユーザーは自分の公開鍵を作成できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectSuccess(
+        db.doc('users/user1/encryption/current').set(publicKeyData)
+      );
+    });
+
+    test('ユーザーは他人の公開鍵を作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user2/encryption/current').set(publicKeyData)
+      );
+    });
+
+    test('current以外の暗号化ドキュメントは作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user1/encryption/privateKeyBackups').set(publicKeyData)
+      );
+    });
+  });
 });
