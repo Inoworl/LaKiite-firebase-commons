@@ -58,13 +58,33 @@ service cloud.firestore {
       ) || (
         data.encrypted == true
         && data.encryptionVersion is int
-        && data.encryptedPayload is map
-        && data.encryptedPayload.cipherText is string
-        && data.encryptedPayload.nonce is string
-        && data.encryptedPayload.mac is string
-        && data.encryptedPayload.algorithm == 'AES-GCM'
+        && hasValidAesGcmPayload(data.encryptedPayload)
         && data.encryptedKeys is map
         && !data.keys().hasAny(['title', 'description', 'location'])
+      );
+    }
+
+    function hasValidAesGcmPayload(payload) {
+      return payload is map
+        && payload.cipherText is string
+        && payload.nonce is string
+        && payload.mac is string
+        && payload.algorithm == 'AES-GCM';
+    }
+
+    function hasValidCommentContent(scheduleData, data) {
+      return (
+        scheduleData.encrypted == true
+        && data.encrypted == true
+        && hasValidAesGcmPayload(data.encryptedContent)
+        && !data.keys().hasAny(['content'])
+      ) || (
+        (
+          !scheduleData.keys().hasAny(['encrypted']) ||
+          scheduleData.encrypted == false
+        )
+        && data.content is string
+        && !data.keys().hasAny(['encrypted', 'encryptedContent'])
       );
     }
 
@@ -458,6 +478,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'userId',
             'content',
+            'encrypted',
+            'encryptedContent',
             'createdAt',
             'updatedAt',
             'isEdited',
@@ -466,8 +488,10 @@ service cloud.firestore {
           ])
           // userId は自分自身でなければならない
           && request.resource.data.userId == request.auth.uid
-          // 必須フィールドの型チェック
-          && request.resource.data.content is string
+          && hasValidCommentContent(
+            get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+            request.resource.data
+          )
           && request.resource.data.createdAt is timestamp
           && request.resource.data.updatedAt is timestamp
           && request.resource.data.isEdited is bool
@@ -481,8 +505,17 @@ service cloud.firestore {
           // userId の改ざんを防止
           && request.resource.data.userId == resource.data.userId
           // 更新可能なフィールドを制限
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt', 'isEdited'])
-          && request.resource.data.content is string
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'content',
+            'encrypted',
+            'encryptedContent',
+            'updatedAt',
+            'isEdited'
+          ])
+          && hasValidCommentContent(
+            get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+            request.resource.data
+          )
           && request.resource.data.updatedAt is timestamp
           && request.resource.data.isEdited is bool;
 

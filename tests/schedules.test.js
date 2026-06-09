@@ -459,6 +459,13 @@ describe('Schedules Collection Security Rules', () => {
   });
 
   describe('コメント機能', () => {
+    const encryptedContent = {
+      cipherText: 'cipher',
+      nonce: 'nonce',
+      mac: 'mac',
+      algorithm: 'AES-GCM'
+    };
+
     test('認証済みユーザーはコメントを作成できる', async () => {
       const mockData = {
         'schedules/schedule1': {
@@ -478,6 +485,69 @@ describe('Schedules Collection Security Rules', () => {
 
       const db = context.firestore();
       await expectSuccess(
+        db.collection('schedules/schedule1/comments').add({
+          userId: 'user2',
+          content: 'Great schedule!',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isEdited: false,
+          userDisplayName: 'Test User 2',
+          userPhotoUrl: null
+        })
+      );
+    });
+
+    test('暗号化済みスケジュールでは暗号化コメントを作成できる', async () => {
+      const mockData = {
+        'schedules/schedule1': {
+          encrypted: true,
+          ownerId: 'user1',
+          visibleTo: ['user2'],
+          sharedLists: [],
+          reactionCount: 0,
+          commentCount: 0
+        }
+      };
+
+      const context = await setupTestEnvironment(
+        { uid: 'user2' },
+        mockData
+      );
+
+      const db = context.firestore();
+      await expectSuccess(
+        db.collection('schedules/schedule1/comments').add({
+          userId: 'user2',
+          encrypted: true,
+          encryptedContent,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isEdited: false,
+          userDisplayName: 'Test User 2',
+          userPhotoUrl: null
+        })
+      );
+    });
+
+    test('暗号化済みスケジュールでは平文コメントを作成できない', async () => {
+      const mockData = {
+        'schedules/schedule1': {
+          encrypted: true,
+          ownerId: 'user1',
+          visibleTo: ['user2'],
+          sharedLists: [],
+          reactionCount: 0,
+          commentCount: 0
+        }
+      };
+
+      const context = await setupTestEnvironment(
+        { uid: 'user2' },
+        mockData
+      );
+
+      const db = context.firestore();
+      await expectFailure(
         db.collection('schedules/schedule1/comments').add({
           userId: 'user2',
           content: 'Great schedule!',
@@ -518,6 +588,46 @@ describe('Schedules Collection Security Rules', () => {
       await expectSuccess(
         db.doc('schedules/schedule1/comments/comment1').update({
           content: 'Updated comment',
+          updatedAt: new Date(),
+          isEdited: true
+        })
+      );
+    });
+
+    test('暗号化コメントの作成者はencryptedContentを更新できる', async () => {
+      const mockData = {
+        'schedules/schedule1': {
+          encrypted: true,
+          ownerId: 'user1',
+          visibleTo: ['user2'],
+          sharedLists: [],
+          reactionCount: 0,
+          commentCount: 0
+        },
+        'schedules/schedule1/comments/comment1': {
+          userId: 'user2',
+          encrypted: true,
+          encryptedContent,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isEdited: false
+        }
+      };
+
+      const context = await setupTestEnvironment(
+        { uid: 'user2' },
+        mockData
+      );
+
+      const db = context.firestore();
+      await expectSuccess(
+        db.doc('schedules/schedule1/comments/comment1').update({
+          encryptedContent: {
+            cipherText: 'updated-cipher',
+            nonce: 'updated-nonce',
+            mac: 'updated-mac',
+            algorithm: 'AES-GCM'
+          },
           updatedAt: new Date(),
           isEdited: true
         })
