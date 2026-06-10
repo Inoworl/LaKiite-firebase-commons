@@ -541,6 +541,11 @@ service cloud.firestore {
       }
     }
 
+    match /encryptionMigration/{docId} {
+      allow read: if request.auth != null && docId == 'current';
+      allow create, update, delete: if false;
+    }
+
     // notificationsコレクションのルール
     match /notifications/{notificationId} {
       // 必須フィールドの検証関数

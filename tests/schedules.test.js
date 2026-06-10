@@ -176,6 +176,64 @@ describe('Schedules Collection Security Rules', () => {
       );
     });
 
+    test('認証済みユーザーは移行待ちユーザーを含む暗号化済みスケジュールを作成できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      const scheduleData = {
+        startDateTime: new Date(),
+        endDateTime: new Date(),
+        ownerId: 'user1',
+        sharedLists: ['list1'],
+        visibleTo: ['user1'],
+        ownerDisplayName: 'Test User',
+        reactionCount: 0,
+        commentCount: 0,
+        encrypted: true,
+        encryptionVersion: 1,
+        encryptedPayload: {
+          cipherText: 'payload-cipher',
+          nonce: 'payload-nonce',
+          mac: 'payload-mac',
+          algorithm: 'AES-GCM'
+        },
+        encryptedKeys: {
+          user1: {
+            encryptedScheduleKey: 'key-cipher-1',
+            nonce: 'key-nonce-1',
+            mac: 'key-mac-1',
+            ephemeralPublicKey: 'ephemeral-public-key-1',
+            algorithm: 'X25519+AES-GCM',
+            keyVersion: 1
+          }
+        },
+        migrationEncryptedKeys: {
+          'schedule-migration-v1': {
+            encryptedScheduleKey: 'migration-key-cipher',
+            nonce: 'migration-key-nonce',
+            mac: 'migration-key-mac',
+            ephemeralPublicKey: 'migration-ephemeral-public-key',
+            algorithm: 'X25519+AES-GCM',
+            keyVersion: 1
+          }
+        },
+        pendingEncryptedRecipients: {
+          user2: {
+            reason: 'missingPublicKey',
+            migrationKeyId: 'schedule-migration-v1',
+            sharedListIds: ['list1']
+          }
+        },
+        pendingEncryptedRecipientIds: ['user2'],
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await expectSuccess(
+        db.doc('schedules/encryptedPendingSchedule').set(scheduleData)
+      );
+    });
+
     test('暗号化済みスケジュールに平文詳細フィールドを混在できない', async () => {
       const context = await setupTestEnvironment({ uid: 'user1' });
       const db = context.firestore();

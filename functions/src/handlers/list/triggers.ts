@@ -1,4 +1,5 @@
 import { onDocumentDeleted, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { scheduleMigrationPrivateKey } from "../schedule/encryption-migration";
 import { removeDeletedListFromSchedules, updateSchedulesVisibility } from "./utils";
 
 /**
@@ -6,7 +7,8 @@ import { removeDeletedListFromSchedules, updateSchedulesVisibility } from "./uti
  */
 export const onListMemberUpdate = onDocumentUpdated({
   document: "lists/{listId}",
-  region: "asia-northeast1"
+  region: "asia-northeast1",
+  secrets: [scheduleMigrationPrivateKey],
 }, async (event) => {
   const listId = event.params.listId;
   const beforeData = event.data?.before.data();

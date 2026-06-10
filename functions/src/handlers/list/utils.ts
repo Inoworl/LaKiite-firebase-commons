@@ -1,6 +1,18 @@
 import * as admin from "firebase-admin";
+import {
+  parseMigrationPrivateKeySecret,
+  rewrapMigrationEncryptedScheduleKey,
+  scheduleMigrationPrivateKey,
+  ScheduleEncryptedKey,
+} from "../schedule/encryption-migration";
 
 type ListDataCache = Map<string, admin.firestore.DocumentData | null>;
+type PublicKeyCache = Map<string, UserPublicKey | null>;
+
+type UserPublicKey = {
+  publicKey: string;
+  keyVersion: number;
+};
 
 /**
  * リストメンバー変更時に関連する予定の可視性を更新する。
@@ -122,11 +134,26 @@ async function recomputeSchedulesVisibilityForList(
         scheduleData,
         options.removeListId
       );
-      const newVisibleTo = await calculateVisibleTo(nextScheduleData, listCache);
+      const intendedVisibleTo = await calculateVisibleTo(
+        nextScheduleData,
+        listCache
+      );
       const updateData: admin.firestore.UpdateData<admin.firestore.DocumentData> = {
-        visibleTo: newVisibleTo,
+        visibleTo: intendedVisibleTo,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
+
+      if (scheduleData.encrypted === true) {
+        Object.assign(
+          updateData,
+          await buildEncryptedScheduleAccessUpdate({
+            scheduleData,
+            intendedVisibleTo,
+            publicKeyCache: new Map(),
+            migrationSecretValue: readMigrationSecretValue(),
+          })
+        );
+      }
 
       if (options.removeListId) {
         updateData.sharedLists = admin.firestore.FieldValue.arrayRemove(
@@ -135,14 +162,17 @@ async function recomputeSchedulesVisibilityForList(
       }
 
       if (
-        !arraysEqual([...newVisibleTo].sort(), [...currentVisibleToArray].sort()) ||
+        !arraysEqual(
+          [...asStringArray(updateData.visibleTo)].sort(),
+          [...currentVisibleToArray].sort()
+        ) ||
         options.removeListId
       ) {
         batch.update(scheduleDoc.ref, updateData);
         batchCount++;
         updatedCount++;
 
-        console.log(`Scheduled update for schedule ${scheduleDoc.id}: ${currentVisibleToArray.length} -> ${newVisibleTo.length} members`);
+        console.log(`Scheduled update for schedule ${scheduleDoc.id}: ${currentVisibleToArray.length} -> ${asStringArray(updateData.visibleTo).length} members`);
 
         if (batchCount >= 450) {
           await batch.commit();
@@ -222,6 +252,145 @@ function asStringArray(value: unknown): string[] {
   return value.filter((item): item is string => {
     return typeof item === "string" && item.length > 0;
   });
+}
+
+async function buildEncryptedScheduleAccessUpdate({
+  scheduleData,
+  intendedVisibleTo,
+  publicKeyCache,
+  migrationSecretValue,
+}: {
+  scheduleData: admin.firestore.DocumentData;
+  intendedVisibleTo: string[];
+  publicKeyCache: PublicKeyCache;
+  migrationSecretValue: string;
+}): Promise<admin.firestore.UpdateData<admin.firestore.DocumentData>> {
+  const encryptedKeys = asRecord(scheduleData.encryptedKeys);
+  const migrationEncryptedKeys = asRecord(scheduleData.migrationEncryptedKeys);
+  const visibleTo = new Set<string>();
+  const pendingUserIds = new Set<string>();
+  const encryptedKeyUpdates: Record<string, ScheduleEncryptedKey> = {};
+
+  const migrationSecret = migrationSecretValue
+    ? parseMigrationPrivateKeySecret(migrationSecretValue)
+    : null;
+  const migrationEncryptedKey = migrationSecret
+    ? asScheduleEncryptedKey(migrationEncryptedKeys[migrationSecret.keyId])
+    : null;
+
+  for (const userId of intendedVisibleTo) {
+    if (encryptedKeys[userId]) {
+      visibleTo.add(userId);
+      continue;
+    }
+
+    const publicKey = await getUserPublicKey(userId, publicKeyCache);
+    if (publicKey && migrationSecret && migrationEncryptedKey) {
+      encryptedKeyUpdates[`encryptedKeys.${userId}`] =
+        rewrapMigrationEncryptedScheduleKey({
+          migrationEncryptedKey,
+          migrationPrivateKey: migrationSecret.privateKey,
+          recipientPublicKey: publicKey.publicKey,
+          recipientKeyVersion: publicKey.keyVersion,
+        });
+      visibleTo.add(userId);
+      continue;
+    }
+
+    pendingUserIds.add(userId);
+  }
+
+  const updateData: admin.firestore.UpdateData<admin.firestore.DocumentData> = {
+    visibleTo: Array.from(visibleTo),
+    ...encryptedKeyUpdates,
+  };
+
+  if (pendingUserIds.size > 0 && migrationSecret) {
+    updateData.pendingEncryptedRecipientIds = Array.from(pendingUserIds);
+    updateData.pendingEncryptedRecipients = Object.fromEntries(
+      Array.from(pendingUserIds).map((userId) => [
+        userId,
+        {
+          reason: "missingPublicKey",
+          migrationKeyId: migrationSecret.keyId,
+          sharedListIds: asStringArray(scheduleData.sharedLists),
+        },
+      ])
+    );
+  } else {
+    updateData.pendingEncryptedRecipientIds =
+      admin.firestore.FieldValue.delete();
+    updateData.pendingEncryptedRecipients = admin.firestore.FieldValue.delete();
+  }
+
+  return updateData;
+}
+
+async function getUserPublicKey(
+  userId: string,
+  cache: PublicKeyCache
+): Promise<UserPublicKey | null> {
+  if (cache.has(userId)) {
+    return cache.get(userId) || null;
+  }
+
+  const doc = await admin
+    .firestore()
+    .collection("users")
+    .doc(userId)
+    .collection("encryption")
+    .doc("current")
+    .get();
+  const data = doc.exists ? doc.data() || {} : {};
+  const publicKey =
+    typeof data.publicKey === "string" ? data.publicKey : "";
+  const value = publicKey
+    ? {
+      publicKey,
+      keyVersion: typeof data.keyVersion === "number" ? data.keyVersion : 1,
+    }
+    : null;
+  cache.set(userId, value);
+  return value;
+}
+
+function readMigrationSecretValue(): string {
+  try {
+    return scheduleMigrationPrivateKey.value();
+  } catch (error) {
+    console.warn("Schedule migration secret is unavailable:", error);
+    return "";
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function asScheduleEncryptedKey(value: unknown): ScheduleEncryptedKey | null {
+  const data = asRecord(value);
+  const encryptedScheduleKey = stringValue(data.encryptedScheduleKey);
+  const nonce = stringValue(data.nonce);
+  const mac = stringValue(data.mac);
+  const ephemeralPublicKey = stringValue(data.ephemeralPublicKey);
+  if (!encryptedScheduleKey || !nonce || !mac || !ephemeralPublicKey) {
+    return null;
+  }
+  return {
+    encryptedScheduleKey,
+    nonce,
+    mac,
+    ephemeralPublicKey,
+    algorithm: stringValue(data.algorithm) || "X25519+AES-GCM",
+    keyVersion: typeof data.keyVersion === "number" ? data.keyVersion : 1,
+  };
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 /**
