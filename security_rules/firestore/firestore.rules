@@ -93,7 +93,24 @@ service cloud.firestore {
         && data.keyVersion is int
         && data.algorithm == 'X25519'
         && data.createdAt != null
-        && data.updatedAt != null;
+        && data.updatedAt != null
+        && (
+          !data.keys().hasAny(['encryptedPrivateKeyBackup'])
+          || hasValidPrivateKeyBackup(data.encryptedPrivateKeyBackup)
+        );
+    }
+
+    function hasValidPrivateKeyBackup(backup) {
+      return backup is map
+        && backup.cipherText is string
+        && backup.nonce is string
+        && backup.mac is string
+        && backup.algorithm == 'AES-GCM'
+        && backup.kdf == 'PBKDF2-HMAC-SHA256'
+        && backup.kdfIterations is int
+        && backup.salt is string
+        && backup.keyVersion is int
+        && backup.version is int;
     }
 
     // ユーザーがスケジュールにアクセス可能かを確認する関数

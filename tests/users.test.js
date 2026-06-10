@@ -257,6 +257,17 @@ describe('Users Collection Security Rules', () => {
       createdAt: new Date(),
       updatedAt: new Date()
     };
+    const encryptedPrivateKeyBackup = {
+      cipherText: 'encrypted-private-key',
+      nonce: 'nonce',
+      mac: 'mac',
+      algorithm: 'AES-GCM',
+      kdf: 'PBKDF2-HMAC-SHA256',
+      kdfIterations: 210000,
+      salt: 'salt',
+      keyVersion: 1,
+      version: 1
+    };
 
     test('認証済みユーザーは他ユーザーの公開鍵を読み取れる', async () => {
       const mockData = {
@@ -275,6 +286,32 @@ describe('Users Collection Security Rules', () => {
 
       await expectSuccess(
         db.doc('users/user1/encryption/current').set(publicKeyData)
+      );
+    });
+
+    test('ユーザーは自分の暗号化秘密鍵バックアップを保存できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectSuccess(
+        db.doc('users/user1/encryption/current').set({
+          ...publicKeyData,
+          encryptedPrivateKeyBackup
+        })
+      );
+    });
+
+    test('ユーザーは平文秘密鍵バックアップを保存できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user1/encryption/current').set({
+          ...publicKeyData,
+          encryptedPrivateKeyBackup: {
+            privateKey: 'plain-private-key'
+          }
+        })
       );
     });
 
