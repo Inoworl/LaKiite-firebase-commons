@@ -55,7 +55,8 @@ export const onListMemberUpdate = onDocumentUpdated({
  */
 export const onListDeleted = onDocumentDeleted({
   document: "lists/{listId}",
-  region: "asia-northeast1"
+  region: "asia-northeast1",
+  secrets: [scheduleMigrationPrivateKey],
 }, async (event) => {
   const listId = event.params.listId;
 

@@ -103,6 +103,27 @@ export async function backfillAllScheduleVisibility(): Promise<{
   };
 }
 
+/**
+ * 単一予定の visibleTo / encryptedKeys / pending を sharedLists から正規化する。
+ * schedule 作成・更新時のサーバー生成派生データ更新に使う。
+ */
+export async function normalizeScheduleVisibilityForDocument(
+  scheduleRef: admin.firestore.DocumentReference<admin.firestore.DocumentData>,
+  scheduleData: admin.firestore.DocumentData
+): Promise<boolean> {
+  const updateData = await buildScheduleVisibilityUpdate({
+    scheduleData,
+    listCache: new Map(),
+  });
+
+  if (!shouldApplyScheduleVisibilityUpdate(scheduleData, updateData)) {
+    return false;
+  }
+
+  await scheduleRef.update(updateData);
+  return true;
+}
+
 async function recomputeSchedulesVisibilityForList(
   listId: string,
   options: { removeListId?: string } = {}
@@ -130,42 +151,14 @@ async function recomputeSchedulesVisibilityForList(
     for (const scheduleDoc of schedulesSnapshot.docs) {
       const scheduleData = scheduleDoc.data();
       const currentVisibleToArray = asStringArray(scheduleData.visibleTo);
-      const nextScheduleData = removeSharedListFromScheduleData(
+      const updateData = await buildScheduleVisibilityUpdate({
         scheduleData,
-        options.removeListId
-      );
-      const intendedVisibleTo = await calculateVisibleTo(
-        nextScheduleData,
-        listCache
-      );
-      const updateData: admin.firestore.UpdateData<admin.firestore.DocumentData> = {
-        visibleTo: intendedVisibleTo,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      };
-
-      if (scheduleData.encrypted === true) {
-        Object.assign(
-          updateData,
-          await buildEncryptedScheduleAccessUpdate({
-            scheduleData,
-            intendedVisibleTo,
-            publicKeyCache: new Map(),
-            migrationSecretValue: readMigrationSecretValue(),
-          })
-        );
-      }
-
-      if (options.removeListId) {
-        updateData.sharedLists = admin.firestore.FieldValue.arrayRemove(
-          options.removeListId
-        );
-      }
+        listCache,
+        removeListId: options.removeListId,
+      });
 
       if (
-        !arraysEqual(
-          [...asStringArray(updateData.visibleTo)].sort(),
-          [...currentVisibleToArray].sort()
-        ) ||
+        shouldApplyScheduleVisibilityUpdate(scheduleData, updateData) ||
         options.removeListId
       ) {
         batch.update(scheduleDoc.ref, updateData);
@@ -195,6 +188,49 @@ async function recomputeSchedulesVisibilityForList(
   }
 }
 
+async function buildScheduleVisibilityUpdate({
+  scheduleData,
+  listCache,
+  removeListId,
+}: {
+  scheduleData: admin.firestore.DocumentData;
+  listCache: ListDataCache;
+  removeListId?: string;
+}): Promise<admin.firestore.UpdateData<admin.firestore.DocumentData>> {
+  const nextScheduleData = removeSharedListFromScheduleData(
+    scheduleData,
+    removeListId
+  );
+  const intendedVisibleTo = await calculateVisibleTo(
+    nextScheduleData,
+    listCache
+  );
+  const updateData: admin.firestore.UpdateData<admin.firestore.DocumentData> = {
+    visibleTo: intendedVisibleTo,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  if (nextScheduleData.encrypted === true) {
+    Object.assign(
+      updateData,
+      await buildEncryptedScheduleAccessUpdate({
+        scheduleData: nextScheduleData,
+        intendedVisibleTo,
+        publicKeyCache: new Map(),
+        migrationSecretValue: readMigrationSecretValue(),
+      })
+    );
+  }
+
+  if (removeListId) {
+    updateData.sharedLists = admin.firestore.FieldValue.arrayRemove(
+      removeListId
+    );
+  }
+
+  return updateData;
+}
+
 async function calculateVisibleTo(
   scheduleData: admin.firestore.DocumentData,
   listCache: ListDataCache = new Map()
@@ -217,6 +253,12 @@ async function calculateVisibleTo(
     const listData = listCache.get(sharedListId);
     if (!listData) {
       console.warn(`Shared list not found: ${sharedListId}`);
+      continue;
+    }
+    if (listData.ownerId !== ownerId) {
+      console.warn(
+        `Shared list ${sharedListId} is not owned by schedule owner ${ownerId}`
+      );
       continue;
     }
 
@@ -317,7 +359,7 @@ async function buildEncryptedScheduleAccessUpdate({
         },
       ])
     );
-  } else {
+  } else if (pendingUserIds.size === 0) {
     updateData.pendingEncryptedRecipientIds =
       admin.firestore.FieldValue.delete();
     updateData.pendingEncryptedRecipients = admin.firestore.FieldValue.delete();
@@ -391,6 +433,41 @@ function asScheduleEncryptedKey(value: unknown): ScheduleEncryptedKey | null {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function shouldApplyScheduleVisibilityUpdate(
+  scheduleData: admin.firestore.DocumentData,
+  updateData: admin.firestore.UpdateData<admin.firestore.DocumentData>
+): boolean {
+  const currentVisibleTo = asStringArray(scheduleData.visibleTo).sort();
+  const nextVisibleTo = asStringArray(updateData.visibleTo).sort();
+
+  if (!arraysEqual(nextVisibleTo, currentVisibleTo)) {
+    return true;
+  }
+
+  if (Object.keys(updateData).some((key) => key.startsWith("encryptedKeys."))) {
+    return true;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(
+    updateData,
+    "pendingEncryptedRecipientIds"
+  )) {
+    const pendingUpdate = updateData.pendingEncryptedRecipientIds;
+    const currentPending = asStringArray(
+      scheduleData.pendingEncryptedRecipientIds
+    ).sort();
+
+    if (Array.isArray(pendingUpdate)) {
+      return !arraysEqual(asStringArray(pendingUpdate).sort(), currentPending);
+    }
+
+    return currentPending.length > 0 ||
+      Object.keys(asRecord(scheduleData.pendingEncryptedRecipients)).length > 0;
+  }
+
+  return false;
 }
 
 /**

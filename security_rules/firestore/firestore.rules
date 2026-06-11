@@ -72,6 +72,70 @@ service cloud.firestore {
         && payload.algorithm == 'AES-GCM';
     }
 
+    function hasValidEncryptedScheduleKey(encryptedKey) {
+      return encryptedKey is map
+        && encryptedKey.encryptedScheduleKey is string
+        && encryptedKey.nonce is string
+        && encryptedKey.mac is string
+        && encryptedKey.ephemeralPublicKey is string
+        && encryptedKey.algorithm == 'X25519+AES-GCM'
+        && encryptedKey.keyVersion is int;
+    }
+
+    function hasOwnerOnlyVisibleTo(data) {
+      return data.visibleTo is list
+        && data.visibleTo.size() == 1
+        && data.visibleTo[0] == request.auth.uid;
+    }
+
+    function ownsSharedList(listId) {
+      return listId is string
+        && exists(/databases/$(database)/documents/lists/$(listId))
+        && get(/databases/$(database)/documents/lists/$(listId)).data.ownerId == request.auth.uid;
+    }
+
+    function ownsAllSharedLists(sharedLists) {
+      return sharedLists is list
+        && sharedLists.size() <= 10
+        && (sharedLists.size() < 1 || ownsSharedList(sharedLists[0]))
+        && (sharedLists.size() < 2 || ownsSharedList(sharedLists[1]))
+        && (sharedLists.size() < 3 || ownsSharedList(sharedLists[2]))
+        && (sharedLists.size() < 4 || ownsSharedList(sharedLists[3]))
+        && (sharedLists.size() < 5 || ownsSharedList(sharedLists[4]))
+        && (sharedLists.size() < 6 || ownsSharedList(sharedLists[5]))
+        && (sharedLists.size() < 7 || ownsSharedList(sharedLists[6]))
+        && (sharedLists.size() < 8 || ownsSharedList(sharedLists[7]))
+        && (sharedLists.size() < 9 || ownsSharedList(sharedLists[8]))
+        && (sharedLists.size() < 10 || ownsSharedList(sharedLists[9]));
+    }
+
+    function hasClientWritableEncryptedScheduleAccess(data) {
+      return !data.keys().hasAny(['encrypted']) || data.encrypted != true || (
+        data.encryptedKeys is map
+        && data.encryptedKeys.keys().hasOnly([request.auth.uid])
+        && data.encryptedKeys.keys().hasAll([request.auth.uid])
+        && hasValidEncryptedScheduleKey(data.encryptedKeys[request.auth.uid])
+        && !data.keys().hasAny([
+          'pendingEncryptedRecipients',
+          'pendingEncryptedRecipientIds'
+        ])
+        && (
+          data.sharedLists.size() == 0
+          || (
+            data.migrationEncryptedKeys is map
+            && data.migrationEncryptedKeys.keys().hasOnly(['schedule-migration-v1'])
+            && hasValidEncryptedScheduleKey(data.migrationEncryptedKeys['schedule-migration-v1'])
+          )
+        )
+      );
+    }
+
+    function hasValidClientScheduleAccessFields(data) {
+      return hasOwnerOnlyVisibleTo(data)
+        && ownsAllSharedLists(data.sharedLists)
+        && hasClientWritableEncryptedScheduleAccess(data);
+    }
+
     function hasValidCommentContent(scheduleData, data) {
       return (
         scheduleData.encrypted == true
@@ -118,10 +182,7 @@ service cloud.firestore {
       return request.auth != null && (
         scheduleData.ownerId == request.auth.uid ||
         scheduleData.visibleTo.hasAny([request.auth.uid]) ||
-        (
-          scheduleData.sharedLists.size() > 0 &&
-          canAccessSharedList(scheduleData.sharedLists[0])
-        )
+        canAccessAnySharedList(scheduleData.sharedLists)
       );
     }
 
@@ -140,6 +201,22 @@ service cloud.firestore {
         listData.ownerId == request.auth.uid ||
         listData.memberIds.hasAny([request.auth.uid])
       );
+    }
+
+    function canAccessAnySharedList(sharedLists) {
+      return sharedLists is list
+        && (
+          (sharedLists.size() > 0 && canAccessSharedList(sharedLists[0])) ||
+          (sharedLists.size() > 1 && canAccessSharedList(sharedLists[1])) ||
+          (sharedLists.size() > 2 && canAccessSharedList(sharedLists[2])) ||
+          (sharedLists.size() > 3 && canAccessSharedList(sharedLists[3])) ||
+          (sharedLists.size() > 4 && canAccessSharedList(sharedLists[4])) ||
+          (sharedLists.size() > 5 && canAccessSharedList(sharedLists[5])) ||
+          (sharedLists.size() > 6 && canAccessSharedList(sharedLists[6])) ||
+          (sharedLists.size() > 7 && canAccessSharedList(sharedLists[7])) ||
+          (sharedLists.size() > 8 && canAccessSharedList(sharedLists[8])) ||
+          (sharedLists.size() > 9 && canAccessSharedList(sharedLists[9]))
+        );
     }
 
     function hasOptionalStringOrNull(data, field) {
@@ -440,6 +517,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.ownerId == request.auth.uid
         && hasRequiredScheduleFields(request.resource.data)
+        && hasValidClientScheduleAccessFields(request.resource.data)
         && request.resource.data.reactionCount == 0
         && request.resource.data.commentCount == 0;
 
@@ -447,6 +525,8 @@ service cloud.firestore {
       allow update: if request.auth != null
         && resource.data.ownerId == request.auth.uid
         && hasRequiredScheduleFields(request.resource.data)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && hasValidClientScheduleAccessFields(request.resource.data)
         && (
           // カウンターの更新を許可
           request.resource.data.reactionCount is number

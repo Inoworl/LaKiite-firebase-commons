@@ -137,7 +137,7 @@ describe('Schedules Collection Security Rules', () => {
         endDateTime: new Date(),
         ownerId: 'user1',
         sharedLists: [],
-        visibleTo: ['user1', 'user2'],
+        visibleTo: ['user1'],
         ownerDisplayName: 'Test User',
         reactionCount: 0,
         commentCount: 0,
@@ -157,14 +157,6 @@ describe('Schedules Collection Security Rules', () => {
             ephemeralPublicKey: 'ephemeral-public-key-1',
             algorithm: 'X25519+AES-GCM',
             keyVersion: 1
-          },
-          user2: {
-            encryptedScheduleKey: 'key-cipher-2',
-            nonce: 'key-nonce-2',
-            mac: 'key-mac-2',
-            ephemeralPublicKey: 'ephemeral-public-key-2',
-            algorithm: 'X25519+AES-GCM',
-            keyVersion: 1
           }
         },
         createdAt: new Date(),
@@ -176,8 +168,16 @@ describe('Schedules Collection Security Rules', () => {
       );
     });
 
-    test('認証済みユーザーは移行待ちユーザーを含む暗号化済みスケジュールを作成できる', async () => {
-      const context = await setupTestEnvironment({ uid: 'user1' });
+    test('認証済みユーザーは自分のリストを指定した暗号化済みスケジュールを作成できる', async () => {
+      const context = await setupTestEnvironment(
+        { uid: 'user1' },
+        {
+          'lists/list1': {
+            ownerId: 'user1',
+            memberIds: ['user2']
+          }
+        }
+      );
       const db = context.firestore();
 
       const scheduleData = {
@@ -217,14 +217,6 @@ describe('Schedules Collection Security Rules', () => {
             keyVersion: 1
           }
         },
-        pendingEncryptedRecipients: {
-          user2: {
-            reason: 'missingPublicKey',
-            migrationKeyId: 'schedule-migration-v1',
-            sharedListIds: ['list1']
-          }
-        },
-        pendingEncryptedRecipientIds: ['user2'],
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -232,6 +224,58 @@ describe('Schedules Collection Security Rules', () => {
       await expectSuccess(
         db.doc('schedules/encryptedPendingSchedule').set(scheduleData)
       );
+    });
+
+    test('クライアントはvisibleToに他人を直接追加して作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      const scheduleData = {
+        title: 'New Schedule',
+        description: 'New Description',
+        startDateTime: new Date(),
+        endDateTime: new Date(),
+        ownerId: 'user1',
+        sharedLists: [],
+        visibleTo: ['user1', 'user2'],
+        ownerDisplayName: 'Test User',
+        reactionCount: 0,
+        commentCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await expectFailure(db.doc('schedules/invalidVisibleTo').set(scheduleData));
+    });
+
+    test('他人のリストをsharedListsに指定して作成できない', async () => {
+      const context = await setupTestEnvironment(
+        { uid: 'user1' },
+        {
+          'lists/list2': {
+            ownerId: 'user2',
+            memberIds: ['user1']
+          }
+        }
+      );
+      const db = context.firestore();
+
+      const scheduleData = {
+        title: 'New Schedule',
+        description: 'New Description',
+        startDateTime: new Date(),
+        endDateTime: new Date(),
+        ownerId: 'user1',
+        sharedLists: ['list2'],
+        visibleTo: ['user1'],
+        ownerDisplayName: 'Test User',
+        reactionCount: 0,
+        commentCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      await expectFailure(db.doc('schedules/invalidSharedList').set(scheduleData));
     });
 
     test('暗号化済みスケジュールに平文詳細フィールドを混在できない', async () => {
@@ -343,7 +387,7 @@ describe('Schedules Collection Security Rules', () => {
           endDateTime: new Date(),
           ownerId: 'user1',
           sharedLists: [],
-          visibleTo: [],
+          visibleTo: ['user1'],
           ownerDisplayName: 'Test User',
           reactionCount: 0,
           commentCount: 0,
