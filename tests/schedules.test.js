@@ -226,6 +226,66 @@ describe('Schedules Collection Security Rules', () => {
       );
     });
 
+    test('スケジュール所有者は複数ユーザー分のencryptedKeysへ更新できる', async () => {
+      const mockData = {
+        'schedules/schedule1': {
+          startDateTime: new Date(),
+          endDateTime: new Date(),
+          ownerId: 'user1',
+          sharedLists: [],
+          visibleTo: ['user1'],
+          ownerDisplayName: 'Test User',
+          reactionCount: 0,
+          commentCount: 0,
+          encrypted: true,
+          encryptionVersion: 1,
+          encryptedPayload: {
+            cipherText: 'payload-cipher',
+            nonce: 'payload-nonce',
+            mac: 'payload-mac',
+            algorithm: 'AES-GCM'
+          },
+          encryptedKeys: {
+            user1: {
+              encryptedScheduleKey: 'key-cipher-1',
+              nonce: 'key-nonce-1',
+              mac: 'key-mac-1',
+              ephemeralPublicKey: 'ephemeral-public-key-1',
+              algorithm: 'X25519+AES-GCM',
+              keyVersion: 1
+            }
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      };
+      const context = await setupTestEnvironment({ uid: 'user1' }, mockData);
+      const db = context.firestore();
+
+      await expectSuccess(
+        db.doc('schedules/schedule1').update({
+          encryptedKeys: {
+            user1: {
+              encryptedScheduleKey: 'key-cipher-1',
+              nonce: 'key-nonce-1',
+              mac: 'key-mac-1',
+              ephemeralPublicKey: 'ephemeral-public-key-1',
+              algorithm: 'X25519+AES-GCM',
+              keyVersion: 1
+            },
+            user2: {
+              encryptedScheduleKey: 'key-cipher-2',
+              nonce: 'key-nonce-2',
+              mac: 'key-mac-2',
+              ephemeralPublicKey: 'ephemeral-public-key-2',
+              algorithm: 'X25519+AES-GCM',
+              keyVersion: 1
+            }
+          }
+        })
+      );
+    });
+
     test('クライアントはvisibleToに他人を直接追加して作成できない', async () => {
       const context = await setupTestEnvironment({ uid: 'user1' });
       const db = context.firestore();
@@ -732,6 +792,44 @@ describe('Schedules Collection Security Rules', () => {
           },
           updatedAt: new Date(),
           isEdited: true
+        })
+      );
+    });
+
+    test('スケジュール所有者はre-keyのために暗号化コメント本文を更新できる', async () => {
+      const mockData = {
+        'schedules/schedule1': {
+          encrypted: true,
+          ownerId: 'user1',
+          visibleTo: ['user1', 'user2'],
+          sharedLists: [],
+          reactionCount: 0,
+          commentCount: 0
+        },
+        'schedules/schedule1/comments/comment1': {
+          userId: 'user2',
+          encrypted: true,
+          encryptedContent,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isEdited: false
+        }
+      };
+
+      const context = await setupTestEnvironment(
+        { uid: 'user1' },
+        mockData
+      );
+
+      const db = context.firestore();
+      await expectSuccess(
+        db.doc('schedules/schedule1/comments/comment1').update({
+          encryptedContent: {
+            cipherText: 'rekeyed-cipher',
+            nonce: 'rekeyed-nonce',
+            mac: 'rekeyed-mac',
+            algorithm: 'AES-GCM'
+          }
         })
       );
     });

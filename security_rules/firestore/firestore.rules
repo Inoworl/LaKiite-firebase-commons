@@ -112,7 +112,6 @@ service cloud.firestore {
     function hasClientWritableEncryptedScheduleAccess(data) {
       return !data.keys().hasAny(['encrypted']) || data.encrypted != true || (
         data.encryptedKeys is map
-        && data.encryptedKeys.keys().hasOnly([request.auth.uid])
         && data.encryptedKeys.keys().hasAll([request.auth.uid])
         && hasValidEncryptedScheduleKey(data.encryptedKeys[request.auth.uid])
         && !data.keys().hasAny([
@@ -597,24 +596,40 @@ service cloud.firestore {
           && hasOptionalStringOrNull(request.resource.data, 'userPhotoUrl');
 
         // 更新: 自分のコメントのみ
-        allow update: if request.auth != null
-          && resource.data.userId == request.auth.uid
-          // userId の改ざんを防止
-          && request.resource.data.userId == resource.data.userId
-          // 更新可能なフィールドを制限
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'content',
-            'encrypted',
-            'encryptedContent',
-            'updatedAt',
-            'isEdited'
-          ])
-          && hasValidCommentContent(
-            get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
-            request.resource.data
+        allow update: if request.auth != null && (
+          (
+            resource.data.userId == request.auth.uid
+            // userId の改ざんを防止
+            && request.resource.data.userId == resource.data.userId
+            // 更新可能なフィールドを制限
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'content',
+              'encrypted',
+              'encryptedContent',
+              'updatedAt',
+              'isEdited'
+            ])
+            && hasValidCommentContent(
+              get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+              request.resource.data
+            )
+            && request.resource.data.updatedAt is timestamp
+            && request.resource.data.isEdited is bool
           )
-          && request.resource.data.updatedAt is timestamp
-          && request.resource.data.isEdited is bool;
+          || (
+            get(/databases/$(database)/documents/schedules/$(scheduleId)).data.ownerId == request.auth.uid
+            && request.resource.data.userId == resource.data.userId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'content',
+              'encrypted',
+              'encryptedContent'
+            ])
+            && hasValidCommentContent(
+              get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+              request.resource.data
+            )
+          )
+        );
 
         // 削除: 自分のコメントのみ
         allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
