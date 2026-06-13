@@ -36,8 +36,7 @@ service cloud.firestore {
 
     // スケジュールの必須フィールドを確認する関数
     function hasRequiredScheduleFields(data) {
-      return data.title is string
-        && data.description is string
+      return hasValidScheduleDetails(data)
         && data.startDateTime != null
         && data.endDateTime != null
         && (!data.keys().hasAny(['isAllDay']) || data.isAllDay is bool)
@@ -51,15 +50,138 @@ service cloud.firestore {
         && data.updatedAt != null;
     }
 
+    function hasValidScheduleDetails(data) {
+      return (
+        data.title is string
+        && data.description is string
+        && hasOptionalStringOrNull(data, 'location')
+      ) || (
+        data.encrypted == true
+        && data.encryptionVersion is int
+        && hasValidAesGcmPayload(data.encryptedPayload)
+        && data.encryptedKeys is map
+        && !data.keys().hasAny(['title', 'description', 'location'])
+      );
+    }
+
+    function hasValidAesGcmPayload(payload) {
+      return payload is map
+        && payload.cipherText is string
+        && payload.nonce is string
+        && payload.mac is string
+        && payload.algorithm == 'AES-GCM';
+    }
+
+    function hasValidEncryptedScheduleKey(encryptedKey) {
+      return encryptedKey is map
+        && encryptedKey.encryptedScheduleKey is string
+        && encryptedKey.nonce is string
+        && encryptedKey.mac is string
+        && encryptedKey.ephemeralPublicKey is string
+        && encryptedKey.algorithm == 'X25519+AES-GCM'
+        && encryptedKey.keyVersion is int;
+    }
+
+    function hasOwnerOnlyVisibleTo(data) {
+      return data.visibleTo is list
+        && data.visibleTo.size() == 1
+        && data.visibleTo[0] == request.auth.uid;
+    }
+
+    function ownsSharedList(listId) {
+      return listId is string
+        && exists(/databases/$(database)/documents/lists/$(listId))
+        && get(/databases/$(database)/documents/lists/$(listId)).data.ownerId == request.auth.uid;
+    }
+
+    function ownsAllSharedLists(sharedLists) {
+      return sharedLists is list
+        && sharedLists.size() <= 10
+        && (sharedLists.size() < 1 || ownsSharedList(sharedLists[0]))
+        && (sharedLists.size() < 2 || ownsSharedList(sharedLists[1]))
+        && (sharedLists.size() < 3 || ownsSharedList(sharedLists[2]))
+        && (sharedLists.size() < 4 || ownsSharedList(sharedLists[3]))
+        && (sharedLists.size() < 5 || ownsSharedList(sharedLists[4]))
+        && (sharedLists.size() < 6 || ownsSharedList(sharedLists[5]))
+        && (sharedLists.size() < 7 || ownsSharedList(sharedLists[6]))
+        && (sharedLists.size() < 8 || ownsSharedList(sharedLists[7]))
+        && (sharedLists.size() < 9 || ownsSharedList(sharedLists[8]))
+        && (sharedLists.size() < 10 || ownsSharedList(sharedLists[9]));
+    }
+
+    function hasClientWritableEncryptedScheduleAccess(data) {
+      return !data.keys().hasAny(['encrypted']) || data.encrypted != true || (
+        data.encryptedKeys is map
+        && data.encryptedKeys.keys().hasAll([request.auth.uid])
+        && hasValidEncryptedScheduleKey(data.encryptedKeys[request.auth.uid])
+        && !data.keys().hasAny([
+          'pendingEncryptedRecipients',
+          'pendingEncryptedRecipientIds'
+        ])
+        && (
+          data.sharedLists.size() == 0
+          || (
+            data.migrationEncryptedKeys is map
+            && data.migrationEncryptedKeys.keys().hasOnly(['schedule-migration-v1'])
+            && hasValidEncryptedScheduleKey(data.migrationEncryptedKeys['schedule-migration-v1'])
+          )
+        )
+      );
+    }
+
+    function hasValidClientScheduleAccessFields(data) {
+      return hasOwnerOnlyVisibleTo(data)
+        && ownsAllSharedLists(data.sharedLists)
+        && hasClientWritableEncryptedScheduleAccess(data);
+    }
+
+    function hasValidCommentContent(scheduleData, data) {
+      return (
+        scheduleData.encrypted == true
+        && data.encrypted == true
+        && hasValidAesGcmPayload(data.encryptedContent)
+        && !data.keys().hasAny(['content'])
+      ) || (
+        (
+          !scheduleData.keys().hasAny(['encrypted']) ||
+          scheduleData.encrypted == false
+        )
+        && data.content is string
+        && !data.keys().hasAny(['encrypted', 'encryptedContent'])
+      );
+    }
+
+    function hasRequiredEncryptionPublicKeyFields(data) {
+      return data.publicKey is string
+        && data.keyVersion is int
+        && data.algorithm == 'X25519'
+        && data.createdAt != null
+        && data.updatedAt != null
+        && (
+          !data.keys().hasAny(['encryptedPrivateKeyBackup'])
+          || hasValidPrivateKeyBackup(data.encryptedPrivateKeyBackup)
+        );
+    }
+
+    function hasValidPrivateKeyBackup(backup) {
+      return backup is map
+        && backup.cipherText is string
+        && backup.nonce is string
+        && backup.mac is string
+        && backup.algorithm == 'AES-GCM'
+        && backup.kdf == 'PBKDF2-HMAC-SHA256'
+        && backup.kdfIterations is int
+        && backup.salt is string
+        && backup.keyVersion is int
+        && backup.version is int;
+    }
+
     // ユーザーがスケジュールにアクセス可能かを確認する関数
     function canAccessSchedule(scheduleData) {
       return request.auth != null && (
         scheduleData.ownerId == request.auth.uid ||
         scheduleData.visibleTo.hasAny([request.auth.uid]) ||
-        (
-          scheduleData.sharedLists.size() > 0 &&
-          canAccessSharedList(scheduleData.sharedLists[0])
-        )
+        canAccessAnySharedList(scheduleData.sharedLists)
       );
     }
 
@@ -78,6 +200,22 @@ service cloud.firestore {
         listData.ownerId == request.auth.uid ||
         listData.memberIds.hasAny([request.auth.uid])
       );
+    }
+
+    function canAccessAnySharedList(sharedLists) {
+      return sharedLists is list
+        && (
+          (sharedLists.size() > 0 && canAccessSharedList(sharedLists[0])) ||
+          (sharedLists.size() > 1 && canAccessSharedList(sharedLists[1])) ||
+          (sharedLists.size() > 2 && canAccessSharedList(sharedLists[2])) ||
+          (sharedLists.size() > 3 && canAccessSharedList(sharedLists[3])) ||
+          (sharedLists.size() > 4 && canAccessSharedList(sharedLists[4])) ||
+          (sharedLists.size() > 5 && canAccessSharedList(sharedLists[5])) ||
+          (sharedLists.size() > 6 && canAccessSharedList(sharedLists[6])) ||
+          (sharedLists.size() > 7 && canAccessSharedList(sharedLists[7])) ||
+          (sharedLists.size() > 8 && canAccessSharedList(sharedLists[8])) ||
+          (sharedLists.size() > 9 && canAccessSharedList(sharedLists[9]))
+        );
     }
 
     function hasOptionalStringOrNull(data, field) {
@@ -242,6 +380,20 @@ service cloud.firestore {
         allow delete: if request.auth != null
           && request.auth.uid == userId;
       }
+
+      match /encryption/{docId} {
+        allow read: if request.auth != null
+          && docId == 'current';
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == userId
+          && docId == 'current'
+          && hasRequiredEncryptionPublicKeyFields(request.resource.data);
+
+        allow delete: if request.auth != null
+          && request.auth.uid == userId
+          && docId == 'current';
+      }
     }
 
     // listsコレクションのルール
@@ -364,6 +516,7 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.ownerId == request.auth.uid
         && hasRequiredScheduleFields(request.resource.data)
+        && hasValidClientScheduleAccessFields(request.resource.data)
         && request.resource.data.reactionCount == 0
         && request.resource.data.commentCount == 0;
 
@@ -371,6 +524,8 @@ service cloud.firestore {
       allow update: if request.auth != null
         && resource.data.ownerId == request.auth.uid
         && hasRequiredScheduleFields(request.resource.data)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && hasValidClientScheduleAccessFields(request.resource.data)
         && (
           // カウンターの更新を許可
           request.resource.data.reactionCount is number
@@ -419,6 +574,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly([
             'userId',
             'content',
+            'encrypted',
+            'encryptedContent',
             'createdAt',
             'updatedAt',
             'isEdited',
@@ -427,8 +584,10 @@ service cloud.firestore {
           ])
           // userId は自分自身でなければならない
           && request.resource.data.userId == request.auth.uid
-          // 必須フィールドの型チェック
-          && request.resource.data.content is string
+          && hasValidCommentContent(
+            get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+            request.resource.data
+          )
           && request.resource.data.createdAt is timestamp
           && request.resource.data.updatedAt is timestamp
           && request.resource.data.isEdited is bool
@@ -437,19 +596,49 @@ service cloud.firestore {
           && hasOptionalStringOrNull(request.resource.data, 'userPhotoUrl');
 
         // 更新: 自分のコメントのみ
-        allow update: if request.auth != null
-          && resource.data.userId == request.auth.uid
-          // userId の改ざんを防止
-          && request.resource.data.userId == resource.data.userId
-          // 更新可能なフィールドを制限
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'updatedAt', 'isEdited'])
-          && request.resource.data.content is string
-          && request.resource.data.updatedAt is timestamp
-          && request.resource.data.isEdited is bool;
+        allow update: if request.auth != null && (
+          (
+            resource.data.userId == request.auth.uid
+            // userId の改ざんを防止
+            && request.resource.data.userId == resource.data.userId
+            // 更新可能なフィールドを制限
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'content',
+              'encrypted',
+              'encryptedContent',
+              'updatedAt',
+              'isEdited'
+            ])
+            && hasValidCommentContent(
+              get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+              request.resource.data
+            )
+            && request.resource.data.updatedAt is timestamp
+            && request.resource.data.isEdited is bool
+          )
+          || (
+            get(/databases/$(database)/documents/schedules/$(scheduleId)).data.ownerId == request.auth.uid
+            && request.resource.data.userId == resource.data.userId
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'content',
+              'encrypted',
+              'encryptedContent'
+            ])
+            && hasValidCommentContent(
+              get(/databases/$(database)/documents/schedules/$(scheduleId)).data,
+              request.resource.data
+            )
+          )
+        );
 
         // 削除: 自分のコメントのみ
         allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
       }
+    }
+
+    match /encryptionMigration/{docId} {
+      allow read: if request.auth != null && docId == 'current';
+      allow create, update, delete: if false;
     }
 
     // notificationsコレクションのルール

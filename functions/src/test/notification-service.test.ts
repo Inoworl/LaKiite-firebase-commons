@@ -408,14 +408,11 @@ describe("Notification service exports", () => {
       }
     });
 
-    it("dispatches comment notifications with truncated comment content", async () => {
+    it("dispatches comment notifications without comment content", async () => {
       const sentEachBatches: Record<string, unknown>[][] = [];
       const restoreMessaging = mockMessaging([], sentEachBatches);
       const restoreFirestore = mockFirestore({
         "users/receive-user": { fcmTokens: ["token-1"] },
-        "schedules/schedule-1/comments/comment-1": {
-          content: "12345678901234567890123456789012345678901234567890more",
-        },
       });
 
       try {
@@ -435,7 +432,7 @@ describe("Notification service exports", () => {
         expect(sentEachBatches).to.have.length(1);
         expect(sentEachBatches[0][0].notification).to.deep.equal({
           title: "新しいコメント",
-          body: "送信者さんがあなたの投稿にコメントしました: 12345678901234567890123456789012345678901234567...",
+          body: "送信者さんがあなたの投稿にコメントしました",
         });
         expect(sentEachBatches[0][0].data).to.include({
           type: "comment",
@@ -444,7 +441,7 @@ describe("Notification service exports", () => {
           toUserId: "receive-user",
           relatedItemId: "schedule-1",
           interactionId: "comment-1",
-          commentContent: "12345678901234567890123456789012345678901234567...",
+          commentContent: "",
         });
       } finally {
         restoreFirestore();
