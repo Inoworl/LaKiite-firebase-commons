@@ -16,6 +16,7 @@ export * from "./handlers/notification/triggers";
 
 // スケジュール関連のトリガーをエクスポート
 export * from "./handlers/schedule/triggers";
+export * from "./handlers/schedule/encryption-migration";
 export * from "./handlers/schedule-digest/triggers";
 export * from "./handlers/schedule-digest/manual-sync";
 
