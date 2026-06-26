@@ -47,7 +47,7 @@ describe("Airbridge friend invite link", () => {
       expect(payload).to.deep.equal({
         channel: "friend_invite_test",
         deeplinkUrl: "lakiitedev://friend/search?searchId=Pj5I7M58",
-        isReengagement: "ON-TRUE",
+        isReengagement: "OFF",
         fallbackPaths: {
           android: "https://example.com/android",
           ios: "https://example.com/ios",

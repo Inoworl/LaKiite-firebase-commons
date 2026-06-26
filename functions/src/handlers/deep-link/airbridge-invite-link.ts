@@ -14,7 +14,7 @@ const airbridgeTrackingLinkApiUrl =
 type AirbridgeTrackingLinkPayload = {
   channel: string;
   deeplinkUrl: string;
-  isReengagement: "ON-TRUE";
+  isReengagement: "OFF";
   fallbackPaths: {
     android: string;
     ios: string;
@@ -73,7 +73,7 @@ export function buildAirbridgeTrackingLinkPayload(params: {
   return {
     channel: params.channel ?? "friend_invite",
     deeplinkUrl,
-    isReengagement: "ON-TRUE",
+    isReengagement: "OFF",
     fallbackPaths: {
       android: params.androidFallbackUrl ?? defaultAndroidFallback,
       ios: params.iosFallbackUrl ?? defaultDesktopFallback,
