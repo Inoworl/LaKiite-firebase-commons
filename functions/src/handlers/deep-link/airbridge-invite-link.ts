@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import { randomBytes } from "crypto";
 import * as https from "https";
 
 const airbridgeTrackingLinkApiToken = defineSecret(
@@ -15,6 +16,7 @@ type AirbridgeTrackingLinkPayload = {
   channel: string;
   deeplinkUrl: string;
   isReengagement: "OFF";
+  customShortId: string;
   fallbackPaths: {
     android: string;
     ios: string;
@@ -50,10 +52,20 @@ export function buildFriendInviteDeeplinkUrl(
   return `${scheme}://friend/search?searchId=${encodeURIComponent(searchId)}`;
 }
 
+export function generateFriendInviteShortId(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const bytes = randomBytes(24);
+  const token = Array.from(bytes, (byte) => alphabet[byte % alphabet.length])
+    .join("");
+
+  return `friend_${token}`;
+}
+
 export function buildAirbridgeTrackingLinkPayload(params: {
   searchId: string;
   projectId: string;
   channel?: string;
+  customShortId?: string;
   androidFallbackUrl?: string;
   iosFallbackUrl?: string;
   desktopFallbackUrl?: string;
@@ -74,6 +86,7 @@ export function buildAirbridgeTrackingLinkPayload(params: {
     channel: params.channel ?? "friend_invite",
     deeplinkUrl,
     isReengagement: "OFF",
+    customShortId: params.customShortId ?? generateFriendInviteShortId(),
     fallbackPaths: {
       android: params.androidFallbackUrl ?? defaultAndroidFallback,
       ios: params.iosFallbackUrl ?? defaultDesktopFallback,

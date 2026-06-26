@@ -48,12 +48,14 @@ describe("Airbridge friend invite link", () => {
         channel: "friend_invite_test",
         deeplinkUrl: "lakiitedev://friend/search?searchId=Pj5I7M58",
         isReengagement: "OFF",
+        customShortId: payload.customShortId,
         fallbackPaths: {
           android: "https://example.com/android",
           ios: "https://example.com/ios",
           desktop: "https://example.com/desktop",
         },
       });
+      expect(payload.customShortId).to.match(/^friend_[a-z0-9]{24}$/);
     });
   });
 
