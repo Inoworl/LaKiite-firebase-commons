@@ -456,12 +456,10 @@ async function sendCommentNotification(
     return;
   }
 
-  const commentContent = await getNotificationCommentContent(notification);
-
   const message: MessageWithoutToken = {
     notification: {
       title: "新しいコメント",
-      body: `${notification.sendUserDisplayName || "新しいユーザー"}さんがあなたの投稿にコメントしました${commentContent ? ": " + commentContent : ""}`,
+      body: `${notification.sendUserDisplayName || "新しいユーザー"}さんがあなたの投稿にコメントしました`,
     },
     data: {
       type: "comment",
@@ -470,7 +468,7 @@ async function sendCommentNotification(
       toUserId: notification.receiveUserId,
       relatedItemId: notification.relatedItemId,
       interactionId: notification.interactionId,
-      commentContent,
+      commentContent: "",
       timestamp: Date.now().toString(),
     },
     android: {
@@ -491,31 +489,4 @@ async function sendCommentNotification(
   };
 
   await sendToFcmTokens(fcmTokens, message, "コメント通知");
-}
-
-async function getNotificationCommentContent(
-  notification: admin.firestore.DocumentData
-): Promise<string> {
-  if (!notification.interactionId) {
-    return "";
-  }
-
-  try {
-    const commentDoc = await admin.firestore()
-      .collection("schedules")
-      .doc(notification.relatedItemId)
-      .collection("comments")
-      .doc(notification.interactionId)
-      .get();
-
-    const commentContent = commentDoc.data()?.content || "";
-    if (commentContent.length > 50) {
-      return `${commentContent.substring(0, 47)}...`;
-    }
-
-    return commentContent;
-  } catch (e) {
-    console.error("コメントデータ取得エラー:", e);
-    return "";
-  }
 }

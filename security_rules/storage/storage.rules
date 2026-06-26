@@ -27,6 +27,22 @@ service firebase.storage {
       allow delete: if isAuthenticated() && isUser(userId);
     }
 
+    // リスト画像のパス (v1/lists/icon/{ownerId}/{listId})
+    match /v1/lists/icon/{ownerId}/{listId} {
+      // 読み取り:認証済みユーザーのみ
+      allow read: if isAuthenticated();
+
+      // 作成・更新:リスト所有者のみ
+      allow create, update: if isAuthenticated() && isUser(ownerId) &&
+        // 画像ファイルのみを許可
+        request.resource.contentType.matches('image/.*') &&
+        // ファイルサイズを5MB以下に制限
+        request.resource.size <= 5 * 1024 * 1024;
+
+      // 削除:リスト所有者のみ
+      allow delete: if isAuthenticated() && isUser(ownerId);
+    }
+
     // 旧プロフィール画像のパス (後方互換性のため残す)
     match /users/{userId}/profile/{imageId} {
       // 読み取り:認証済みユーザーのみ
