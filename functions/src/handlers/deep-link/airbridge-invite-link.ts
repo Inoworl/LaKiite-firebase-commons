@@ -10,6 +10,9 @@ const airbridgeTrackingLinkApiToken = defineSecret(
 const searchIdPattern = /^[a-zA-Z0-9]{8}$/;
 const airbridgeTrackingLinkApiUrl =
   "https://api.airbridge.io/v1/tracking-links";
+const devAndroidFallbackUrl =
+  "https://appdistribution.firebase.google.com/testerapps/1:3311967889:android:70d7247f19e5f65438a930/releases/4aibmmfq1gh2g";
+const devIosFallbackUrl = "https://testflight.apple.com/v1/app/6755344095";
 
 type AirbridgeTrackingLinkPayload = {
   channel: string;
@@ -67,7 +70,10 @@ export function buildAirbridgeTrackingLinkPayload(params: {
   const defaultAndroidFallback =
     params.projectId.includes("prod") ?
       "https://play.google.com/store/apps/details?id=com.inoworl.lakiite" :
-      "https://play.google.com/store/apps/details?id=com.inoworl.lakiite.dev";
+      devAndroidFallbackUrl;
+  const defaultIosFallback = params.projectId.includes("prod") ?
+    "https://lakiite-flutter-app-prod.web.app" :
+    devIosFallbackUrl;
   const defaultDesktopFallback = params.projectId.includes("prod") ?
     "https://lakiite-flutter-app-prod.web.app" :
     "https://lakiite-flutter-app-dev.web.app";
@@ -78,7 +84,7 @@ export function buildAirbridgeTrackingLinkPayload(params: {
     isReengagement: "OFF",
     fallbackPaths: {
       android: params.androidFallbackUrl ?? defaultAndroidFallback,
-      ios: params.iosFallbackUrl ?? defaultDesktopFallback,
+      ios: params.iosFallbackUrl ?? defaultIosFallback,
       desktop: params.desktopFallbackUrl ?? defaultDesktopFallback,
     },
   };

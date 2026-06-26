@@ -57,6 +57,42 @@ describe("Airbridge friend invite link", () => {
       expect(payload.customShortId).to.equal(undefined);
     });
 
+    it("uses dev install distribution URLs by default", async () => {
+      const { buildAirbridgeTrackingLinkPayload } = await import(
+        "../handlers/deep-link/airbridge-invite-link"
+      );
+
+      const payload = buildAirbridgeTrackingLinkPayload({
+        searchId: "Pj5I7M58",
+        projectId: "lakiite-flutter-app-dev",
+      });
+
+      expect(payload.fallbackPaths).to.deep.equal({
+        android:
+          "https://appdistribution.firebase.google.com/testerapps/1:3311967889:android:70d7247f19e5f65438a930/releases/4aibmmfq1gh2g",
+        ios: "https://testflight.apple.com/v1/app/6755344095",
+        desktop: "https://lakiite-flutter-app-dev.web.app",
+      });
+    });
+
+    it("keeps prod default fallbacks unchanged", async () => {
+      const { buildAirbridgeTrackingLinkPayload } = await import(
+        "../handlers/deep-link/airbridge-invite-link"
+      );
+
+      const payload = buildAirbridgeTrackingLinkPayload({
+        searchId: "Pj5I7M58",
+        projectId: "lakiite-flutter-app-prod",
+      });
+
+      expect(payload.fallbackPaths).to.deep.equal({
+        android:
+          "https://play.google.com/store/apps/details?id=com.inoworl.lakiite",
+        ios: "https://lakiite-flutter-app-prod.web.app",
+        desktop: "https://lakiite-flutter-app-prod.web.app",
+      });
+    });
+
     it("uses customShortId only when explicitly provided", async () => {
       const { buildAirbridgeTrackingLinkPayload } = await import(
         "../handlers/deep-link/airbridge-invite-link"
