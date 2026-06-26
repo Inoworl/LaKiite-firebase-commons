@@ -48,14 +48,27 @@ describe("Airbridge friend invite link", () => {
         channel: "friend_invite_test",
         deeplinkUrl: "lakiitedev://friend/search?searchId=Pj5I7M58",
         isReengagement: "OFF",
-        customShortId: payload.customShortId,
         fallbackPaths: {
           android: "https://example.com/android",
           ios: "https://example.com/ios",
           desktop: "https://example.com/desktop",
         },
       });
-      expect(payload.customShortId).to.match(/^friend_[a-z0-9]{24}$/);
+      expect(payload.customShortId).to.equal(undefined);
+    });
+
+    it("uses customShortId only when explicitly provided", async () => {
+      const { buildAirbridgeTrackingLinkPayload } = await import(
+        "../handlers/deep-link/airbridge-invite-link"
+      );
+
+      const payload = buildAirbridgeTrackingLinkPayload({
+        searchId: "Pj5I7M58",
+        projectId: "lakiite-flutter-app-dev",
+        customShortId: "friend_custom123",
+      });
+
+      expect(payload.customShortId).to.equal("friend_custom123");
     });
   });
 

@@ -1,7 +1,6 @@
 import * as admin from "firebase-admin";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
-import { randomBytes } from "crypto";
 import * as https from "https";
 
 const airbridgeTrackingLinkApiToken = defineSecret(
@@ -16,7 +15,7 @@ type AirbridgeTrackingLinkPayload = {
   channel: string;
   deeplinkUrl: string;
   isReengagement: "OFF";
-  customShortId: string;
+  customShortId?: string;
   fallbackPaths: {
     android: string;
     ios: string;
@@ -52,15 +51,6 @@ export function buildFriendInviteDeeplinkUrl(
   return `${scheme}://friend/search?searchId=${encodeURIComponent(searchId)}`;
 }
 
-export function generateFriendInviteShortId(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const bytes = randomBytes(24);
-  const token = Array.from(bytes, (byte) => alphabet[byte % alphabet.length])
-    .join("");
-
-  return `friend_${token}`;
-}
-
 export function buildAirbridgeTrackingLinkPayload(params: {
   searchId: string;
   projectId: string;
@@ -82,17 +72,22 @@ export function buildAirbridgeTrackingLinkPayload(params: {
     "https://lakiite-flutter-app-prod.web.app" :
     "https://lakiite-flutter-app-dev.web.app";
 
-  return {
+  const payload: AirbridgeTrackingLinkPayload = {
     channel: params.channel ?? "friend_invite",
     deeplinkUrl,
     isReengagement: "OFF",
-    customShortId: params.customShortId ?? generateFriendInviteShortId(),
     fallbackPaths: {
       android: params.androidFallbackUrl ?? defaultAndroidFallback,
       ios: params.iosFallbackUrl ?? defaultDesktopFallback,
       desktop: params.desktopFallbackUrl ?? defaultDesktopFallback,
     },
   };
+
+  if (params.customShortId != null) {
+    payload.customShortId = params.customShortId;
+  }
+
+  return payload;
 }
 
 export function extractTrackingLinkUrl(
@@ -179,6 +174,30 @@ function requestAirbridgeTrackingLink(
         response.on("end", () => {
           const responseBody = Buffer.concat(chunks).toString("utf8");
           if ((response.statusCode ?? 500) >= 400) {
+            if (
+              response.statusCode === 400 &&
+              payload.customShortId &&
+              responseBody.includes("Custom Domain is not set")
+            ) {
+              console.warn(
+                "Retrying Airbridge tracking link request without customShortId",
+                {
+                  customShortIdLength: payload.customShortId.length,
+                }
+              );
+              const retryPayload = { ...payload };
+              delete retryPayload.customShortId;
+              requestAirbridgeTrackingLink(token, retryPayload)
+                .then(resolve)
+                .catch(reject);
+              return;
+            }
+
+            console.error("Airbridge tracking link request failed", {
+              statusCode: response.statusCode,
+              customShortIdLength: payload.customShortId?.length,
+              responseBody: responseBody.slice(0, 1000),
+            });
             reject(
               new FriendInviteLinkError(502, {
                 error: "招待リンクの生成に失敗しました",
