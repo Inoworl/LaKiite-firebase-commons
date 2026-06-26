@@ -1,6 +1,7 @@
 import * as admin from "firebase-admin";
 import { onRequest } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
+import { randomInt } from "crypto";
 import * as https from "https";
 
 const airbridgeTrackingLinkApiToken = defineSecret(
@@ -13,6 +14,9 @@ const airbridgeTrackingLinkApiUrl =
 const devAndroidFallbackUrl =
   "https://appdistribution.firebase.google.com/testerapps/1:3311967889:android:70d7247f19e5f65438a930/releases/4aibmmfq1gh2g";
 const devIosFallbackUrl = "https://testflight.apple.com/v1/app/6755344095";
+const customShortIdPrefix = "friend_";
+const customShortIdRandomLength = 17;
+const customShortIdAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 type AirbridgeTrackingLinkPayload = {
   channel: string;
@@ -54,6 +58,14 @@ export function buildFriendInviteDeeplinkUrl(
   return `${scheme}://friend/search?searchId=${encodeURIComponent(searchId)}`;
 }
 
+function generateFriendInviteCustomShortId(): string {
+  let suffix = "";
+  for (let i = 0; i < customShortIdRandomLength; i++) {
+    suffix += customShortIdAlphabet[randomInt(customShortIdAlphabet.length)];
+  }
+  return `${customShortIdPrefix}${suffix}`;
+}
+
 export function buildAirbridgeTrackingLinkPayload(params: {
   searchId: string;
   projectId: string;
@@ -89,9 +101,8 @@ export function buildAirbridgeTrackingLinkPayload(params: {
     },
   };
 
-  if (params.customShortId != null) {
-    payload.customShortId = params.customShortId;
-  }
+  payload.customShortId =
+    params.customShortId ?? generateFriendInviteCustomShortId();
 
   return payload;
 }

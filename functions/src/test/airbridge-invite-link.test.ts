@@ -44,17 +44,18 @@ describe("Airbridge friend invite link", () => {
         desktopFallbackUrl: "https://example.com/desktop",
       });
 
-      expect(payload).to.deep.equal({
+      expect(payload).to.include({
         channel: "friend_invite_test",
         deeplinkUrl: "lakiitedev://friend/search?searchId=Pj5I7M58",
         isReengagement: "OFF",
-        fallbackPaths: {
-          android: "https://example.com/android",
-          ios: "https://example.com/ios",
-          desktop: "https://example.com/desktop",
-        },
       });
-      expect(payload.customShortId).to.equal(undefined);
+      expect(payload.fallbackPaths).to.deep.equal({
+        android: "https://example.com/android",
+        ios: "https://example.com/ios",
+        desktop: "https://example.com/desktop",
+      });
+      expect(payload.customShortId).to.match(/^friend_[a-z0-9]{17}$/);
+      expect(payload.customShortId).to.have.length(24);
     });
 
     it("uses dev install distribution URLs by default", async () => {
@@ -93,7 +94,7 @@ describe("Airbridge friend invite link", () => {
       });
     });
 
-    it("uses customShortId only when explicitly provided", async () => {
+    it("uses an explicit customShortId when provided", async () => {
       const { buildAirbridgeTrackingLinkPayload } = await import(
         "../handlers/deep-link/airbridge-invite-link"
       );
