@@ -25,6 +25,9 @@ export * from "./handlers/user/batch-sync";
 export * from "./handlers/user/monitoring";
 export * from "./handlers/user/manual-sync";
 
+// Deep Link関連の関数をエクスポート
+export * from "./handlers/deep-link/airbridge-invite-link";
+
 // 通知関連の関数をエクスポート
 export const sendNotification = notificationService.sendNotification;
 export const onNotificationCreated = notificationService.onNotificationCreated;
