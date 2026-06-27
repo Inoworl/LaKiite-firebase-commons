@@ -23,6 +23,9 @@ type AirbridgeTrackingLinkPayload = {
   deeplinkUrl: string;
   isReengagement: "OFF";
   customShortId?: string;
+  deeplinkOption: {
+    showAlertForInitialDeeplinkingIssue: true;
+  };
   fallbackPaths: {
     android: string;
     ios: string;
@@ -94,6 +97,9 @@ export function buildAirbridgeTrackingLinkPayload(params: {
     channel: params.channel ?? "friend_invite",
     deeplinkUrl,
     isReengagement: "OFF",
+    deeplinkOption: {
+      showAlertForInitialDeeplinkingIssue: true,
+    },
     fallbackPaths: {
       android: params.androidFallbackUrl ?? defaultAndroidFallback,
       ios: params.iosFallbackUrl ?? defaultIosFallback,
