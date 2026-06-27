@@ -77,7 +77,7 @@ describe("Airbridge friend invite link", () => {
       });
     });
 
-    it("keeps prod default fallbacks unchanged", async () => {
+    it("uses prod store URLs by default", async () => {
       const { buildAirbridgeTrackingLinkPayload } = await import(
         "../handlers/deep-link/airbridge-invite-link"
       );
@@ -90,7 +90,7 @@ describe("Airbridge friend invite link", () => {
       expect(payload.fallbackPaths).to.deep.equal({
         android:
           "https://play.google.com/store/apps/details?id=com.inoworl.lakiite",
-        ios: "https://lakiite-flutter-app-prod.web.app",
+        ios: "https://apps.apple.com/jp/app/id6746154277",
         desktop: "https://lakiite-flutter-app-prod.web.app",
       });
     });

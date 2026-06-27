@@ -14,6 +14,7 @@ const airbridgeTrackingLinkApiUrl =
 const devAndroidFallbackUrl =
   "https://appdistribution.firebase.google.com/testerapps/1:3311967889:android:70d7247f19e5f65438a930/releases/4aibmmfq1gh2g";
 const devIosFallbackUrl = "https://testflight.apple.com/v1/app/6755344095";
+const prodIosFallbackUrl = "https://apps.apple.com/jp/app/id6746154277";
 const customShortIdPrefix = "friend_";
 const customShortIdRandomLength = 17;
 const customShortIdAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -84,7 +85,7 @@ export function buildAirbridgeTrackingLinkPayload(params: {
       "https://play.google.com/store/apps/details?id=com.inoworl.lakiite" :
       devAndroidFallbackUrl;
   const defaultIosFallback = params.projectId.includes("prod") ?
-    "https://lakiite-flutter-app-prod.web.app" :
+    prodIosFallbackUrl :
     devIosFallbackUrl;
   const defaultDesktopFallback = params.projectId.includes("prod") ?
     "https://lakiite-flutter-app-prod.web.app" :
