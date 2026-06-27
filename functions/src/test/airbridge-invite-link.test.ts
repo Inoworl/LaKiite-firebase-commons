@@ -2,7 +2,7 @@ import { expect } from "chai";
 
 describe("Airbridge friend invite link", () => {
   describe("buildFriendInviteDeeplinkUrl", () => {
-    it("uses the dev scheme outside prod projects", async () => {
+    it("uses the dev scheme for the dev project", async () => {
       const { buildFriendInviteDeeplinkUrl } = await import(
         "../handlers/deep-link/airbridge-invite-link"
       );
@@ -93,6 +93,19 @@ describe("Airbridge friend invite link", () => {
         ios: "https://apps.apple.com/jp/app/id6746154277",
         desktop: "https://lakiite-flutter-app-prod.web.app",
       });
+    });
+
+    it("rejects unknown project ids instead of falling back to dev", async () => {
+      const { buildAirbridgeTrackingLinkPayload } = await import(
+        "../handlers/deep-link/airbridge-invite-link"
+      );
+
+      expect(() =>
+        buildAirbridgeTrackingLinkPayload({
+          searchId: "Pj5I7M58",
+          projectId: "unknown-project",
+        })
+      ).to.throw("招待リンク生成の環境設定が不正です");
     });
 
     it("uses an explicit customShortId when provided", async () => {

@@ -14,10 +14,16 @@ const airbridgeTrackingLinkApiUrl =
 const devAndroidFallbackUrl =
   "https://appdistribution.firebase.google.com/testerapps/1:3311967889:android:70d7247f19e5f65438a930/releases/4aibmmfq1gh2g";
 const devIosFallbackUrl = "https://testflight.apple.com/v1/app/6755344095";
+const devDesktopFallbackUrl = "https://lakiite-flutter-app-dev.web.app";
+const prodAndroidFallbackUrl =
+  "https://play.google.com/store/apps/details?id=com.inoworl.lakiite";
 const prodIosFallbackUrl = "https://apps.apple.com/jp/app/id6746154277";
+const prodDesktopFallbackUrl = "https://lakiite-flutter-app-prod.web.app";
 const customShortIdPrefix = "friend_";
 const customShortIdRandomLength = 17;
 const customShortIdAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+type AppEnv = "dev" | "prod";
 
 type AirbridgeTrackingLinkPayload = {
   channel: string;
@@ -51,19 +57,56 @@ class FriendInviteLinkError extends Error {
   }
 }
 
+const appConfigByEnv: Record<
+  AppEnv,
+  {
+    scheme: string;
+    fallbackPaths: AirbridgeTrackingLinkPayload["fallbackPaths"];
+  }
+> = {
+  dev: {
+    scheme: "lakiitedev",
+    fallbackPaths: {
+      android: devAndroidFallbackUrl,
+      ios: devIosFallbackUrl,
+      desktop: devDesktopFallbackUrl,
+    },
+  },
+  prod: {
+    scheme: "lakiite",
+    fallbackPaths: {
+      android: prodAndroidFallbackUrl,
+      ios: prodIosFallbackUrl,
+      desktop: prodDesktopFallbackUrl,
+    },
+  },
+};
+
+function resolveAppEnv(projectId: string): AppEnv {
+  switch (projectId) {
+  case "lakiite-flutter-app-dev":
+    return "dev";
+  case "lakiite-flutter-app-prod":
+    return "prod";
+  default:
+    throw new FriendInviteLinkError(500, {
+      error: "招待リンク生成の環境設定が不正です",
+    });
+  }
+}
+
 export function buildFriendInviteDeeplinkUrl(
   searchId: string,
   projectId: string
 ): string {
-  const scheme = projectId.includes("prod") ? "lakiite" : "lakiitedev";
+  const { scheme } = appConfigByEnv[resolveAppEnv(projectId)];
   return `${scheme}://friend/search?searchId=${encodeURIComponent(searchId)}`;
 }
 
 function generateFriendInviteCustomShortId(): string {
-  let suffix = "";
-  for (let i = 0; i < customShortIdRandomLength; i++) {
-    suffix += customShortIdAlphabet[randomInt(customShortIdAlphabet.length)];
-  }
+  const suffix = Array.from({ length: customShortIdRandomLength }, () =>
+    customShortIdAlphabet[randomInt(customShortIdAlphabet.length)]
+  ).join("");
   return `${customShortIdPrefix}${suffix}`;
 }
 
@@ -76,29 +119,20 @@ export function buildAirbridgeTrackingLinkPayload(params: {
   iosFallbackUrl?: string;
   desktopFallbackUrl?: string;
 }): AirbridgeTrackingLinkPayload {
+  const { fallbackPaths } = appConfigByEnv[resolveAppEnv(params.projectId)];
   const deeplinkUrl = buildFriendInviteDeeplinkUrl(
     params.searchId,
     params.projectId
   );
-  const defaultAndroidFallback =
-    params.projectId.includes("prod") ?
-      "https://play.google.com/store/apps/details?id=com.inoworl.lakiite" :
-      devAndroidFallbackUrl;
-  const defaultIosFallback = params.projectId.includes("prod") ?
-    prodIosFallbackUrl :
-    devIosFallbackUrl;
-  const defaultDesktopFallback = params.projectId.includes("prod") ?
-    "https://lakiite-flutter-app-prod.web.app" :
-    "https://lakiite-flutter-app-dev.web.app";
 
   const payload: AirbridgeTrackingLinkPayload = {
     channel: params.channel ?? "friend_invite",
     deeplinkUrl,
     isReengagement: "OFF",
     fallbackPaths: {
-      android: params.androidFallbackUrl ?? defaultAndroidFallback,
-      ios: params.iosFallbackUrl ?? defaultIosFallback,
-      desktop: params.desktopFallbackUrl ?? defaultDesktopFallback,
+      android: params.androidFallbackUrl ?? fallbackPaths.android,
+      ios: params.iosFallbackUrl ?? fallbackPaths.ios,
+      desktop: params.desktopFallbackUrl ?? fallbackPaths.desktop,
     },
   };
 
@@ -169,6 +203,18 @@ function getProjectId(): string {
   return process.env.GCLOUD_PROJECT ?? process.env.GOOGLE_CLOUD_PROJECT ?? "";
 }
 
+function shouldRetryWithoutCustomShortId(params: {
+  statusCode: number | undefined;
+  payload: AirbridgeTrackingLinkPayload;
+  responseBody: string;
+}): boolean {
+  return (
+    params.statusCode === 400 &&
+    Boolean(params.payload.customShortId) &&
+    params.responseBody.includes("Custom Domain is not set")
+  );
+}
+
 function requestAirbridgeTrackingLink(
   token: string,
   payload: AirbridgeTrackingLinkPayload
@@ -192,15 +238,15 @@ function requestAirbridgeTrackingLink(
         response.on("end", () => {
           const responseBody = Buffer.concat(chunks).toString("utf8");
           if ((response.statusCode ?? 500) >= 400) {
-            if (
-              response.statusCode === 400 &&
-              payload.customShortId &&
-              responseBody.includes("Custom Domain is not set")
-            ) {
+            if (shouldRetryWithoutCustomShortId({
+              statusCode: response.statusCode,
+              payload,
+              responseBody,
+            })) {
               console.warn(
                 "Retrying Airbridge tracking link request without customShortId",
                 {
-                  customShortIdLength: payload.customShortId.length,
+                  customShortIdLength: payload.customShortId?.length,
                 }
               );
               const retryPayload = { ...payload };
