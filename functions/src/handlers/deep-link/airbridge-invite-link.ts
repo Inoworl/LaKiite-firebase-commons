@@ -22,6 +22,7 @@ const prodDesktopFallbackUrl = "https://lakiite-flutter-app-prod.web.app";
 const customShortIdPrefix = "friend_";
 const customShortIdRandomLength = 17;
 const customShortIdAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+const friendInviteLinkCacheVersion = 1;
 
 type AppEnv = "dev" | "prod";
 
@@ -46,6 +47,15 @@ type AirbridgeTrackingLinkResponse = {
       };
     };
   };
+};
+
+type FriendInviteLinkCache = {
+  uid?: unknown;
+  env?: unknown;
+  searchId?: unknown;
+  url?: unknown;
+  deeplinkUrl?: unknown;
+  version?: unknown;
 };
 
 class FriendInviteLinkError extends Error {
@@ -108,6 +118,73 @@ function generateFriendInviteCustomShortId(): string {
     customShortIdAlphabet[randomInt(customShortIdAlphabet.length)]
   ).join("");
   return `${customShortIdPrefix}${suffix}`;
+}
+
+export function getReusableFriendInviteLinkUrl(
+  cache: FriendInviteLinkCache | undefined,
+  params: {
+    uid: string;
+    searchId: string;
+    projectId: string;
+  }
+): string | undefined {
+  if (!cache) {
+    return undefined;
+  }
+
+  const env = resolveAppEnv(params.projectId);
+  if (
+    cache.uid !== params.uid ||
+    cache.env !== env ||
+    cache.searchId !== params.searchId ||
+    cache.version !== friendInviteLinkCacheVersion ||
+    typeof cache.url !== "string" ||
+    cache.url.trim().length === 0
+  ) {
+    return undefined;
+  }
+
+  return cache.url;
+}
+
+async function getCachedFriendInviteLinkUrl(params: {
+  uid: string;
+  searchId: string;
+  projectId: string;
+}): Promise<string | undefined> {
+  const cacheDoc = await admin
+    .firestore()
+    .collection("friendInviteLinks")
+    .doc(params.uid)
+    .get();
+
+  return getReusableFriendInviteLinkUrl(cacheDoc.data(), params);
+}
+
+async function saveFriendInviteLinkCache(params: {
+  uid: string;
+  searchId: string;
+  projectId: string;
+  deeplinkUrl: string;
+  url: string;
+}): Promise<void> {
+  await admin
+    .firestore()
+    .collection("friendInviteLinks")
+    .doc(params.uid)
+    .set(
+      {
+        uid: params.uid,
+        env: resolveAppEnv(params.projectId),
+        searchId: params.searchId,
+        deeplinkUrl: params.deeplinkUrl,
+        url: params.url,
+        version: friendInviteLinkCacheVersion,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
 }
 
 export function buildAirbridgeTrackingLinkPayload(params: {
@@ -322,7 +399,18 @@ export const createFriendInviteLink = onRequest(
       const decodedToken = await verifyAuthorizationHeader(
         request.headers.authorization
       );
+      const projectId = getProjectId();
       const searchId = await getSearchIdForUser(decodedToken.uid);
+      const cachedUrl = await getCachedFriendInviteLinkUrl({
+        uid: decodedToken.uid,
+        searchId,
+        projectId,
+      });
+      if (cachedUrl) {
+        response.status(200).json({ url: cachedUrl });
+        return;
+      }
+
       const token = airbridgeTrackingLinkApiToken.value();
       if (!token) {
         throw new FriendInviteLinkError(500, {
@@ -332,7 +420,7 @@ export const createFriendInviteLink = onRequest(
 
       const payload = buildAirbridgeTrackingLinkPayload({
         searchId,
-        projectId: getProjectId(),
+        projectId,
         channel: getEnvValue("AIRBRIDGE_INVITE_CHANNEL"),
         androidFallbackUrl: getEnvValue("AIRBRIDGE_ANDROID_FALLBACK_URL"),
         iosFallbackUrl: getEnvValue("AIRBRIDGE_IOS_FALLBACK_URL"),
@@ -342,7 +430,15 @@ export const createFriendInviteLink = onRequest(
         token,
         payload
       );
-      response.status(200).json({ url: extractTrackingLinkUrl(airbridgeResponse) });
+      const url = extractTrackingLinkUrl(airbridgeResponse);
+      await saveFriendInviteLinkCache({
+        uid: decodedToken.uid,
+        searchId,
+        projectId,
+        deeplinkUrl: payload.deeplinkUrl,
+        url,
+      });
+      response.status(200).json({ url });
     } catch (error) {
       if (error instanceof FriendInviteLinkError) {
         response.status(error.status).json(error.response);

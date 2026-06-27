@@ -20,6 +20,32 @@ service cloud.firestore {
         && isValidSearchId(data.searchId);
     }
 
+    function searchIdReservationPath(searchId) {
+      return /databases/$(database)/documents/reservedSearchIds/$(searchId);
+    }
+
+    function hasSearchIdReservationFor(userId, searchId) {
+      return existsAfter(searchIdReservationPath(searchId))
+        && getAfter(searchIdReservationPath(searchId)).data.ownerUid == userId
+        && getAfter(searchIdReservationPath(searchId)).data.searchId == searchId;
+    }
+
+    function hasRequiredSearchIdReservationFields(searchId, data) {
+      return data.keys().hasOnly([
+          'ownerUid',
+          'searchId',
+          'source',
+          'reservedAt'
+        ])
+        && data.ownerUid is string
+        && data.ownerUid == request.auth.uid
+        && data.searchId is string
+        && data.searchId == searchId
+        && isValidSearchId(data.searchId)
+        && data.source == 'client'
+        && data.reservedAt != null;
+    }
+
     // 非公開プロフィールの必須フィールドを確認する関数
     function hasRequiredPrivateFields(data) {
       return data.name != null
@@ -346,7 +372,8 @@ service cloud.firestore {
       // 本人のみ書き込み可能
       allow create, update: if request.auth != null
         && request.auth.uid == userId
-        && hasRequiredPublicFields(request.resource.data);
+        && hasRequiredPublicFields(request.resource.data)
+        && hasSearchIdReservationFor(userId, request.resource.data.searchId);
 
       allow delete: if request.auth != null
         && request.auth.uid == userId;
@@ -394,6 +421,19 @@ service cloud.firestore {
           && request.auth.uid == userId
           && docId == 'current';
       }
+    }
+
+    match /reservedSearchIds/{searchId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && !exists(searchIdReservationPath(searchId))
+        && hasRequiredSearchIdReservationFields(
+          searchId,
+          request.resource.data
+        );
+
+      allow update, delete: if false;
     }
 
     // listsコレクションのルール

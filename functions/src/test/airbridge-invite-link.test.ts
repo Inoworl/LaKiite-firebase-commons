@@ -157,4 +157,54 @@ describe("Airbridge friend invite link", () => {
       expect(url).to.equal("https://lakiitedev.airbridge.io/click");
     });
   });
+
+  describe("getReusableFriendInviteLinkUrl", () => {
+    it("returns a cached link when uid searchId and env match", async () => {
+      const { getReusableFriendInviteLinkUrl } = await import(
+        "../handlers/deep-link/airbridge-invite-link"
+      );
+
+      const cachedUrl = getReusableFriendInviteLinkUrl(
+        {
+          uid: "user-1",
+          env: "dev",
+          searchId: "Pj5I7M58",
+          url: "https://lakiite-dev.inoworl.com/friend_cached",
+          version: 1,
+        },
+        {
+          uid: "user-1",
+          searchId: "Pj5I7M58",
+          projectId: "lakiite-flutter-app-dev",
+        }
+      );
+
+      expect(cachedUrl).to.equal(
+        "https://lakiite-dev.inoworl.com/friend_cached"
+      );
+    });
+
+    it("ignores a cached link when the searchId has changed", async () => {
+      const { getReusableFriendInviteLinkUrl } = await import(
+        "../handlers/deep-link/airbridge-invite-link"
+      );
+
+      const cachedUrl = getReusableFriendInviteLinkUrl(
+        {
+          uid: "user-1",
+          env: "dev",
+          searchId: "OLDID123",
+          url: "https://lakiite-dev.inoworl.com/friend_cached",
+          version: 1,
+        },
+        {
+          uid: "user-1",
+          searchId: "Pj5I7M58",
+          projectId: "lakiite-flutter-app-dev",
+        }
+      );
+
+      expect(cachedUrl).to.equal(undefined);
+    });
+  });
 });
