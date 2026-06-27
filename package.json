@@ -21,6 +21,10 @@
     "deploy:indexes:prod": "npm --prefix functions run deploy:indexes:prod",
     "set:app-version:dev": "node scripts/set-app-version.js dev",
     "set:app-version:prod": "node scripts/set-app-version.js prod",
+    "backfill:reserved-search-ids:dev": "bash -lc 'unset npm_config_prefix && . \"$HOME/.nvm/nvm.sh\" && nvm use 20.9.0 >/dev/null && node scripts/backfill-reserved-search-ids.js dev'",
+    "backfill:reserved-search-ids:prod": "bash -lc 'unset npm_config_prefix && . \"$HOME/.nvm/nvm.sh\" && nvm use 20.9.0 >/dev/null && node scripts/backfill-reserved-search-ids.js prod'",
+    "backfill:reserved-search-ids:dev:apply": "bash -lc 'unset npm_config_prefix && . \"$HOME/.nvm/nvm.sh\" && nvm use 20.9.0 >/dev/null && node scripts/backfill-reserved-search-ids.js dev --apply'",
+    "backfill:reserved-search-ids:prod:apply": "bash -lc 'unset npm_config_prefix && . \"$HOME/.nvm/nvm.sh\" && nvm use 20.9.0 >/dev/null && node scripts/backfill-reserved-search-ids.js prod --apply'",
     "logs:functions:dev": "npm --prefix functions run logs:dev",
     "logs:functions:prod": "npm --prefix functions run logs:prod"
   },
