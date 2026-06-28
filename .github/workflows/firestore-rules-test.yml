@@ -2,24 +2,28 @@ name: Firebase Security and Functions Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
     paths:
       - ".github/workflows/firestore-rules-test.yml"
+      - ".firebaserc"
       - "security_rules/firestore/**"
       - "security_rules/storage/**"
       - "tests/**"
       - "functions/**"
+      - "scripts/**"
       - "package.json"
       - "package-lock.json"
       - "firebase.json"
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - ".github/workflows/firestore-rules-test.yml"
+      - ".firebaserc"
       - "security_rules/firestore/**"
       - "security_rules/storage/**"
       - "tests/**"
       - "functions/**"
+      - "scripts/**"
       - "package.json"
       - "package-lock.json"
       - "firebase.json"
