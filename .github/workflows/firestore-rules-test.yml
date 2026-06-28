@@ -294,6 +294,9 @@ jobs:
           PROD_FIREBASE_PROJECT_ID: ${{ vars.PROD_FIREBASE_PROJECT_ID }}
           EXPECTED_FIREBASE_PROJECT_ID: lakiite-flutter-app-prod
 
+      - name: Backfill reserved search IDs
+        run: npm run backfill:reserved-search-ids:prod:apply
+
       - name: Deploy Firebase resources
         run: |
           echo "🚀 Firebaseセキュリティルール、Functions、Indexesをデプロイ中..."
