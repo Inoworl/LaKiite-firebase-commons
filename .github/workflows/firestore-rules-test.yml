@@ -295,7 +295,7 @@ jobs:
           EXPECTED_FIREBASE_PROJECT_ID: lakiite-flutter-app-prod
 
       - name: Backfill reserved search IDs
-        run: npm run backfill:reserved-search-ids:prod:apply
+        run: node scripts/backfill-reserved-search-ids.js prod --apply
 
       - name: Deploy Firebase resources
         run: |
