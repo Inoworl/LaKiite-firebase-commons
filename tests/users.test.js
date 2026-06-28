@@ -86,8 +86,90 @@ describe('Users Collection Security Rules', () => {
         displayName: 'Test User',
         searchId: 'test1234'
       };
+      const reservationData = {
+        ownerUid: 'user1',
+        searchId: 'test1234',
+        source: 'client',
+        reservedAt: new Date()
+      };
+      const batch = db.batch();
+      batch.set(db.doc('reservedSearchIds/test1234'), reservationData);
+      batch.set(db.doc('users/user1'), userData);
 
-      await expectSuccess(db.doc('users/user1').set(userData));
+      await expectSuccess(batch.commit());
+    });
+
+    test('予約されていないsearchIdではプロフィールを作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      const userData = {
+        displayName: 'Test User',
+        searchId: 'test1234'
+      };
+
+      await expectFailure(db.doc('users/user1').set(userData));
+    });
+
+    test('searchId変更時は新しい予約IDが必要', async () => {
+      const mockData = {
+        'users/user1': {
+          displayName: 'Test User',
+          searchId: 'test1234'
+        },
+        'reservedSearchIds/test1234': {
+          ownerUid: 'user1',
+          searchId: 'test1234',
+          source: 'backfill',
+          reservedAt: new Date()
+        }
+      };
+      const context = await setupTestEnvironment({ uid: 'user1' }, mockData);
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user1').update({
+          displayName: 'Test User',
+          searchId: 'next1234'
+        })
+      );
+
+      const batch = db.batch();
+      batch.set(db.doc('reservedSearchIds/next1234'), {
+        ownerUid: 'user1',
+        searchId: 'next1234',
+        source: 'client',
+        reservedAt: new Date()
+      });
+      batch.update(db.doc('users/user1'), {
+        displayName: 'Test User',
+        searchId: 'next1234'
+      });
+      await expectSuccess(batch.commit());
+    });
+
+    test('他ユーザーが予約済みのsearchIdには変更できない', async () => {
+      const mockData = {
+        'users/user1': {
+          displayName: 'Test User',
+          searchId: 'test1234'
+        },
+        'reservedSearchIds/taken123': {
+          ownerUid: 'user2',
+          searchId: 'taken123',
+          source: 'backfill',
+          reservedAt: new Date()
+        }
+      };
+      const context = await setupTestEnvironment({ uid: 'user1' }, mockData);
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('users/user1').update({
+          displayName: 'Test User',
+          searchId: 'taken123'
+        })
+      );
     });
 
     test('ユーザーは他人のプロフィールを作成できない', async () => {
@@ -124,6 +206,54 @@ describe('Users Collection Security Rules', () => {
       };
 
       await expectFailure(db.doc('users/user1').set(invalidUserData));
+    });
+  });
+
+  describe('検索ID予約', () => {
+    test('ユーザーは自分のsearchId予約を作成できる', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectSuccess(
+        db.doc('reservedSearchIds/test1234').set({
+          ownerUid: 'user1',
+          searchId: 'test1234',
+          source: 'client',
+          reservedAt: new Date()
+        })
+      );
+    });
+
+    test('ユーザーは他人名義のsearchId予約を作成できない', async () => {
+      const context = await setupTestEnvironment({ uid: 'user1' });
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('reservedSearchIds/test1234').set({
+          ownerUid: 'user2',
+          searchId: 'test1234',
+          source: 'client',
+          reservedAt: new Date()
+        })
+      );
+    });
+
+    test('予約済みsearchIdは更新も削除もできない', async () => {
+      const mockData = {
+        'reservedSearchIds/test1234': {
+          ownerUid: 'user1',
+          searchId: 'test1234',
+          source: 'backfill',
+          reservedAt: new Date()
+        }
+      };
+      const context = await setupTestEnvironment({ uid: 'user1' }, mockData);
+      const db = context.firestore();
+
+      await expectFailure(
+        db.doc('reservedSearchIds/test1234').update({ source: 'client' })
+      );
+      await expectFailure(db.doc('reservedSearchIds/test1234').delete());
     });
   });
 

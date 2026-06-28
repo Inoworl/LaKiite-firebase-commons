@@ -2,24 +2,28 @@ name: Firebase Security and Functions Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, dev]
     paths:
       - ".github/workflows/firestore-rules-test.yml"
+      - ".firebaserc"
       - "security_rules/firestore/**"
       - "security_rules/storage/**"
       - "tests/**"
       - "functions/**"
+      - "scripts/**"
       - "package.json"
       - "package-lock.json"
       - "firebase.json"
   pull_request:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - ".github/workflows/firestore-rules-test.yml"
+      - ".firebaserc"
       - "security_rules/firestore/**"
       - "security_rules/storage/**"
       - "tests/**"
       - "functions/**"
+      - "scripts/**"
       - "package.json"
       - "package-lock.json"
       - "firebase.json"
@@ -289,6 +293,9 @@ jobs:
           PROD_FIREBASE_SERVICE_ACCOUNT_KEY_BASE64: ${{ secrets.PROD_FIREBASE_SERVICE_ACCOUNT_KEY_BASE64 }}
           PROD_FIREBASE_PROJECT_ID: ${{ vars.PROD_FIREBASE_PROJECT_ID }}
           EXPECTED_FIREBASE_PROJECT_ID: lakiite-flutter-app-prod
+
+      - name: Backfill reserved search IDs
+        run: npm run backfill:reserved-search-ids:prod:apply
 
       - name: Deploy Firebase resources
         run: |
